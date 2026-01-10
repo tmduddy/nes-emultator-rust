@@ -1,3 +1,7 @@
+use nes_emulator_rust::{CPU};
+
 fn main() {
-    println!("Hello, world!");
+    let cpu = CPU::new();
+
+    println!("{:?}", cpu);
 }
