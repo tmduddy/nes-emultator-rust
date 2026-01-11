@@ -1,7 +1,10 @@
-use nes_emulator_rust::{CPU};
+pub mod cpu;
+pub mod opcodes;
+
+#[macro_use]
+extern crate lazy_static;
 
 fn main() {
-    let cpu = CPU::new();
-
-    println!("{:?}", cpu);
+    let cpu = cpu::CPU::new();
+    cpu.debug_print();
 }

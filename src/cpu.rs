@@ -1,3 +1,21 @@
+use crate::opcodes;
+use std::collections::HashMap;
+
+#[derive(Debug)]
+#[allow(non_camel_case_types)]
+pub enum AddressingMode {
+    Immediate,
+    ZeroPage,
+    ZeroPage_X,
+    ZeroPage_Y,
+    Absolute,
+    Absolute_X,
+    Absolute_Y,
+    Indirect_X,
+    Indirect_Y,
+    NoneAddressing,
+}
+
 #[derive(Debug)]
 pub struct CPU {
     /// ## The Accumulator register (A)
@@ -11,6 +29,12 @@ pub struct CPU {
     /// Used as an offset in specific memory addressing modes. Can be used for auxiliary storage
     /// needs (holding temp values, being used as a counter, etc.)
     pub register_x: u8,
+
+    /// ## Index Register Y (Y)
+    ///
+    /// Used as an offset in specific memory addressing modes. Can be used for auxiliary storage
+    /// needs (holding temp values, being used as a counter, etc.)
+    pub register_y: u8,
 
     /// ## Processor status (P)
     ///
@@ -40,6 +64,10 @@ pub struct CPU {
     ///
     /// Simulates the on board 64K memory of the NES.
     /// Note that different address blocks are reserved for different system functions.
+    /// - 0x0000 -> 0x2000 is reserved for CPU RAM
+    /// - 0x2000 -> 0x4020 is redirected to other hardware devices
+    /// - 0x4020 -> 0x6000 is a special zone used differently by different carts. Ignored for now.
+    /// - 0x6000 -> 0x8000 is mapped to RAM space on a cartridge, ignored for now.
     /// - 0x8000 -> 0xFFFF is reserved for Program ROM (PRG ROM)
     memory: [u8; 0xFFFF],
 }
@@ -49,9 +77,83 @@ impl CPU {
         CPU {
             register_a: 0,
             register_x: 0,
+            register_y: 0,
             status: 0,
             program_counter: 0,
             memory: [0; 0xFFFF],
+        }
+    }
+
+    pub fn debug_print(&self) {
+        println!(
+            "\
+A:\t{}
+X:\t{}
+Y:\t{}
+Status:\t{}
+PC:\t{}",
+            self.register_a, self.register_x, self.register_y, self.status, self.program_counter
+        );
+    }
+
+    /// Uses the active addressing mode to determine the atual addresses to read.
+    fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
+        match mode {
+            AddressingMode::Immediate => self.program_counter as u16,
+            AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
+            AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
+
+            AddressingMode::ZeroPage_X => {
+                let pos = self.mem_read(self.program_counter);
+                let addr = pos.wrapping_add(self.register_x) as u16;
+                addr
+            }
+            AddressingMode::ZeroPage_Y => {
+                let pos = self.mem_read(self.program_counter);
+                let addr = pos.wrapping_add(self.register_y) as u16;
+                addr
+            }
+
+            AddressingMode::Absolute_X => {
+                let pos = self.mem_read_u16(self.program_counter);
+                let addr = pos.wrapping_add(self.register_x as u16);
+                addr
+            }
+            AddressingMode::Absolute_Y => {
+                let pos = self.mem_read_u16(self.program_counter);
+                let addr = pos.wrapping_add(self.register_y as u16);
+                addr
+            }
+
+            AddressingMode::Indirect_X => {
+                // Find the value pointed at by the PC
+                let base = self.mem_read(self.program_counter);
+                // Add the value in X to use as a ptr to the actual address
+                let ptr = base.wrapping_add(self.register_x) as u16;
+
+                // Find the two bytes indicated by the ptr
+                let low = self.mem_read(ptr);
+                let high = self.mem_read(ptr.wrapping_add(1));
+
+                // Account for LE encoding and return those values as the new address
+                (high as u16) << 8 | (low as u16)
+            }
+            AddressingMode::Indirect_Y => {
+                // Find the value pointed at by the PC
+                let base = self.mem_read(self.program_counter) as u16;
+
+                // Find the two values pointed at by base
+                let low = self.mem_read(base);
+                let high = self.mem_read(base.wrapping_add(1));
+
+                // account for LE encoding
+                let deref_base = (high as u16) << 8 | (low as u16);
+                let deref = deref_base.wrapping_add(self.register_y as u16);
+                deref
+            }
+            AddressingMode::NoneAddressing => {
+                panic!("mode {:?} is not supported", mode);
+            }
         }
     }
 
@@ -88,6 +190,7 @@ impl CPU {
         self.mem_write(addr + 1, high);
     }
 
+    /// Loads a given program into PRG ROM
     pub fn load(&mut self, program: Vec<u8>) {
         // Note that PRG ROM starts at 0x8000, all previous bytes are reserved for other
         // system functions.
@@ -108,53 +211,76 @@ impl CPU {
     pub fn reset(&mut self) {
         self.register_a = 0;
         self.register_x = 0;
+        self.register_y = 0;
         self.status = 0b0000_0000;
 
         self.program_counter = self.mem_read_u16(0xFFFC);
     }
 
+    /// Executes the program in PRG ROM.
     pub fn run(&mut self) {
-        // clock cycle loop
+        let ref opcodes: HashMap<u8, &'static opcodes::OpCode> = *opcodes::OPCODES_MAP;
+
+        // println!("{:?}", opcodes);
+        // Clock cycle loop
         loop {
             // Fetch the op code from the program at the counter.
-            let ops_code = self.mem_read(self.program_counter);
+            let code = self.mem_read(self.program_counter);
+            let opcode = opcodes
+                .get(&code)
+                .expect(&format!("couldn't find code {} in opcodes map", code));
 
             // Increment to the next program step.
             self.program_counter += 1;
 
-            match ops_code {
-                // Opcode `LDA`
-                0xA9 => {
-                    let param = self.mem_read(self.program_counter);
-                    self.program_counter += 1;
-                    self.lda(param);
+            // Track the current state of the PC to identify if it needs to be incremented after
+            // the code is run.
+            let pc_state = self.program_counter;
+
+            match opcode.instruction {
+                "LDA" => self.lda(&opcode.addressing_mode), 
+                "STA" => self.sta(&opcode.addressing_mode),
+                "TAX" => self.tax(),
+                "INX" => self.inx(),
+                "BRK" => return,
+                _ => {
+                    panic!("bad opcode found somehow")
                 }
-                // Opcode `TAX`
-                0xAA => self.tax(),
-                // Opcode `INX`
-                0xE8 => self.inx(),
-                // Opcode `BRK`
-                0x00 => return,
-                _ => todo!(),
             }
+            if self.program_counter == pc_state {
+                self.program_counter += (opcode.byte_count - 1) as u16;
+            }
+            self.debug_print();
         }
     }
 
-    /// 0xA9 op code `LDA`. Loads a value into the A register.
-    fn lda(&mut self, value: u8) {
+    /// `LDA`. Loads a value into the A register.
+    fn lda(&mut self, mode: &AddressingMode) {
+        println!("LDA");
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
+    /// `STA`. Copies a value from the A register into memory.
+    fn sta(&mut self, mode: &AddressingMode) {
+        println!("STA");
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_a);
+    }
+
     /// 0xAA Opcode `TAX`. Copies a value from register A to register X.
     fn tax(&mut self) {
+        println!("TAX");
         self.register_x = self.register_a;
         self.update_zero_and_negative_flags(self.register_x);
     }
 
     /// 0xE8 op code `INX`. Increments the value in the X register by 1.
     fn inx(&mut self) {
-        println!("{:?}", self.register_x);
+        println!("INX");
         self.register_x = self.register_x.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_x);
     }
@@ -183,7 +309,7 @@ mod test {
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
         let mut cpu = CPU::new();
-        // LDA #$05
+        // LDA 0x05
         // BRK
         let program = vec![0xa9, 0x05, 0x00];
         cpu.load_and_run(program);
@@ -221,6 +347,18 @@ mod test {
             cpu.status & 0b1000_0000 == 0,
             "Negative flag should be unset"
         );
+    }
+
+    #[test]
+    fn test_0xa5_lda_from_memory() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x10, 0x55);
+
+        // LDA 0x10
+        // BRK
+        cpu.load_and_run(vec![0xa5, 0x10, 0x00]);
+
+        assert_eq!(cpu.register_a, 0x55);
     }
 
     #[test]
@@ -314,5 +452,18 @@ mod test {
             cpu.register_x, 1,
             "the value in X should rollover to 0 and start counting up again"
         );
+    }
+
+    #[test]
+    fn test_sta_loads_data() {
+        let mut cpu = CPU::new();
+        // LDA 0xFF
+        // STA 0x10
+        // BRK
+        let program = vec![0xA9, 0xFF, 0x85, 0x10];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.mem_read(0x10), 0xFF);
     }
 }
