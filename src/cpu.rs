@@ -17,6 +17,65 @@ pub enum AddressingMode {
 }
 
 #[derive(Debug)]
+pub struct Status {
+    pub negative: bool,
+    pub overflow: bool,
+    /// Not used in this instruction set. In reality this is pinned high (1) but for our purposes
+    /// it's easier to leave it permenantly false to maintain consistency with the other flags.
+    pub no_op: bool,
+    pub break_cmd: bool,
+    /// Not used for the NES specific instruction set.
+    pub decimal: bool,
+    pub interrupt_disable: bool,
+    pub zero: bool,
+    pub carry: bool,
+}
+
+impl Status {
+    fn new() -> Self {
+        Status {
+            negative: false,
+            overflow: false,
+            no_op: false,
+            break_cmd: false,
+            decimal: false,
+            interrupt_disable: false,
+            zero: false,
+            carry: false,
+        }
+    }
+
+    fn as_array(&self) -> [bool; 8] {
+        [
+            self.negative,
+            self.overflow,
+            self.no_op,
+            self.break_cmd,
+            self.decimal,
+            self.interrupt_disable,
+            self.zero,
+            self.carry,
+        ]
+    }
+
+    fn to_binary_string(&self) -> String {
+        let mut bin_rep = vec!["0"; 8];
+
+        for (i, val) in self.as_array().iter().enumerate() {
+            if *val {
+                bin_rep[i] = "1";
+            }
+        }
+
+        bin_rep.join("")
+    }
+
+    pub fn to_binary(&self) -> u16 {
+        u16::from_str_radix(&self.to_binary_string(), 2).expect("couldn't parse Status to binary")
+    }
+}
+
+#[derive(Debug)]
 pub struct CPU {
     /// ## The Accumulator register (A)
     ///
@@ -53,7 +112,7 @@ pub struct CPU {
     /// \[I\]nterrupt Disable
     /// \[Z\]ero Flag
     /// \[C\]arry Flag
-    pub status: u8,
+    pub status: Status,
 
     /// ## Program Counter (PC)
     ///
@@ -78,7 +137,7 @@ impl CPU {
             register_a: 0,
             register_x: 0,
             register_y: 0,
-            status: 0,
+            status: Status::new(),
             program_counter: 0,
             memory: [0; 0xFFFF],
         }
@@ -87,12 +146,16 @@ impl CPU {
     pub fn debug_print(&self) {
         println!(
             "\
-A:\t{}
-X:\t{}
-Y:\t{}
-Status:\t{}
-PC:\t{}",
-            self.register_a, self.register_x, self.register_y, self.status, self.program_counter
+A:\t0x{:X}
+X:\t0x{:X}
+Y:\t0x{:X}
+Status:\t0b{:b}
+PC:\t0x{:X}",
+            self.register_a,
+            self.register_x,
+            self.register_y,
+            self.status.to_binary(),
+            self.program_counter
         );
     }
 
@@ -212,7 +275,7 @@ PC:\t{}",
         self.register_a = 0;
         self.register_x = 0;
         self.register_y = 0;
-        self.status = 0b0000_0000;
+        self.status = Status::new();
 
         self.program_counter = self.mem_read_u16(0xFFFC);
     }
@@ -221,16 +284,15 @@ PC:\t{}",
     pub fn run(&mut self) {
         let ref opcodes: HashMap<u8, &'static opcodes::OpCode> = *opcodes::OPCODES_MAP;
 
-        // println!("{:?}", opcodes);
         // Clock cycle loop
         loop {
             // Fetch the op code from the program at the counter.
             let code = self.mem_read(self.program_counter);
             let opcode = opcodes
                 .get(&code)
-                .expect(&format!("couldn't find code {} in opcodes map", code));
+                .expect(&format!("couldn't find code 0x{:X} in opcodes map", code));
 
-            // Increment to the next program step.
+            // Increment to the next program step immediately after reading.
             self.program_counter += 1;
 
             // Track the current state of the PC to identify if it needs to be incremented after
@@ -238,7 +300,8 @@ PC:\t{}",
             let pc_state = self.program_counter;
 
             match opcode.instruction {
-                "LDA" => self.lda(&opcode.addressing_mode), 
+                "ADC" => self.adc(&opcode.addressing_mode),
+                "LDA" => self.lda(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "INX" => self.inx(),
@@ -250,15 +313,30 @@ PC:\t{}",
             if self.program_counter == pc_state {
                 self.program_counter += (opcode.byte_count - 1) as u16;
             }
-            self.debug_print();
         }
+    }
+
+    /// `ADC` Adds a value from memory to the A register, stores in the A register.
+    fn adc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let mut value = self.mem_read(addr);
+        // If the carry flag is already set we need to add 1 to the value
+        value = value.wrapping_add(match self.status.carry {
+            true => 1,
+            false => 0,
+        });
+        println!("ADC 0x{:X} (0x{:X})", addr, value);
+
+        self.set_carry_flag((value as u16) + (self.register_a as u16) > 0xFF);
+        self.update_zero_and_negative_flags(self.register_a);
+        self.register_a = self.register_a.wrapping_add(value);
     }
 
     /// `LDA`. Loads a value into the A register.
     fn lda(&mut self, mode: &AddressingMode) {
-        println!("LDA");
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+        println!("LDA 0x{:X} (0x{:X})", addr, value);
 
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
@@ -266,8 +344,8 @@ PC:\t{}",
 
     /// `STA`. Copies a value from the A register into memory.
     fn sta(&mut self, mode: &AddressingMode) {
-        println!("STA");
         let addr = self.get_operand_address(mode);
+        println!("STA 0x{:X}", addr);
         self.mem_write(addr, self.register_a);
     }
 
@@ -285,19 +363,23 @@ PC:\t{}",
         self.update_zero_and_negative_flags(self.register_x);
     }
 
+    fn set_carry_flag(&mut self, should_set: bool) {
+        self.status.carry = should_set;
+    }
+
     fn update_zero_and_negative_flags(&mut self, result: u8) {
         // set or clear the [Z]ero flag.
         if result == 0 {
-            self.status = self.status | 0b0000_0010;
+            self.status.zero = true;
         } else {
-            self.status = self.status & 0b1111_1101;
+            self.status.zero = false;
         }
 
         // set or clear the [N]egative flag.
         if result & 0b1000_0000 != 0 {
-            self.status = self.status | 0b1000_0000;
+            self.status.negative = true;
         } else {
-            self.status = self.status & 0b0111_1111;
+            self.status.negative = false;
         }
     }
 }
@@ -305,6 +387,28 @@ PC:\t{}",
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_status_to_binary_string_works_with_defaults() {
+        let status = Status::new();
+        assert_eq!(status.to_binary_string(), "00100000");
+    }
+
+    #[test]
+    fn test_status_to_binary_works_with_defaults() {
+        let status = Status::new();
+        assert_eq!(status.to_binary(), 0b0010_0000);
+    }
+
+    #[test]
+    fn test_status_works_with_non_default_values() {
+        let mut status = Status::new();
+        status.negative = true;
+        status.carry = true;
+        status.zero = true;
+
+        assert_eq!(status.to_binary_string(), "10100011");
+    }
 
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
@@ -318,11 +422,11 @@ mod test {
             "provided value should be found in register"
         );
         assert!(
-            cpu.status & 0b0000_0010 == 0b00,
+            cpu.status.to_binary() & 0b0000_0010 == 0b00,
             "Zero flag should be unset"
         );
         assert!(
-            cpu.status & 0b1000_0000 == 0,
+            cpu.status.to_binary() & 0b1000_0000 == 0,
             "Negative flag should be unset"
         );
     }
@@ -339,14 +443,8 @@ mod test {
             cpu.register_a, 0x00,
             "provided value should be found in register"
         );
-        assert!(
-            cpu.status | 0b0000_0000 == 0b0000_0010,
-            "Zero flag should be set"
-        );
-        assert!(
-            cpu.status & 0b1000_0000 == 0,
-            "Negative flag should be unset"
-        );
+        assert!(cpu.status.zero, "zero flag should be true");
+        assert!(!cpu.status.negative, "Negative flag should be unset");
     }
 
     #[test]
@@ -374,11 +472,8 @@ mod test {
             cpu.register_x, 0x05,
             "provided value should be found in register"
         );
-        assert!(cpu.status | 0b0000_0000 == 0, "Zero flag should be unset");
-        assert!(
-            cpu.status & 0b1000_0000 == 0,
-            "Negative flag should be unset"
-        );
+        assert!(!cpu.status.zero, "Zero flag should be unset");
+        assert!(!cpu.status.negative, "Negative flag should be unset");
     }
 
     #[test]
@@ -394,14 +489,8 @@ mod test {
             cpu.register_x, 0x00,
             "provided value should be found in register"
         );
-        assert!(
-            cpu.status | 0b0000_0000 == 0b0000_0010,
-            "Zero flag should be set"
-        );
-        assert!(
-            cpu.status & 0b1000_0000 == 0,
-            "Negative flag should be unset"
-        );
+        assert!(cpu.status.zero, "Zero flag should be set");
+        assert!(!cpu.status.negative, "Negative flag should be unset");
     }
 
     #[test]
@@ -431,10 +520,7 @@ mod test {
 
         cpu.load_and_run(program);
         assert_eq!(cpu.register_x, 0, "the value in X should rollover to 0");
-        assert!(
-            cpu.status | 0b0000_0000 == 0b0000_0010,
-            "Zero flag should be set"
-        );
+        assert!(cpu.status.zero, "Zero flag should be set");
     }
 
     #[test]
@@ -465,5 +551,54 @@ mod test {
         cpu.load_and_run(program);
 
         assert_eq!(cpu.mem_read(0x10), 0xFF);
+    }
+
+    #[test]
+    fn test_adc_adds_data_immediate() {
+        let mut cpu = CPU::new();
+        // LDA 0x04
+        // ADC 0x05
+        // BRK
+        let program = vec![0xA9, 0x04, 0x69, 0x05, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 0x09,
+            "The A register should hold the sum of the value in 0x10 and A"
+        );
+    }
+
+    #[test]
+    fn test_adc_handles_zero() {
+        let mut cpu = CPU::new();
+        // LDA 0x00
+        // ADC 0x00
+        // BRK
+        let program = vec![0xA9, 0x00, 0x69, 0x00, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0x00, "The A register should hold 0");
+
+        assert!(cpu.status.zero, "Zero flag should be set");
+    }
+
+    #[test]
+    fn test_adc_adds_data_from_memory() {
+        let mut cpu = CPU::new();
+        // LDA 0x04
+        // STA 0x10
+        // LDA 0x05
+        // ADC 0x10
+        // BRK
+        let program = vec![0xA9, 0x04, 0x85, 0x10, 0xA9, 0x05, 0x6d, 0x10, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 0x09,
+            "The A register should hold the sum of the value in 0x10 and A"
+        );
     }
 }
