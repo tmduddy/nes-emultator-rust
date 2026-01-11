@@ -301,6 +301,7 @@ PC:\t0x{:X}",
 
             match opcode.instruction {
                 "ADC" => self.adc(&opcode.addressing_mode),
+                "AND" => self.and(&opcode.addressing_mode),
                 "LDA" => self.lda(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
@@ -330,6 +331,16 @@ PC:\t0x{:X}",
         self.set_carry_flag((value as u16) + (self.register_a as u16) > 0xFF);
         self.update_zero_and_negative_flags(self.register_a);
         self.register_a = self.register_a.wrapping_add(value);
+    }
+
+    /// `AND` performs a bitwise AND between the A register and a memory value.
+    fn and(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        println!("AND 0x{:X} (0x{:X})", addr, value);
+        self.register_a = self.register_a & value;
+
+        self.update_zero_and_negative_flags(self.register_a);
     }
 
     /// `LDA`. Loads a value into the A register.
@@ -391,13 +402,13 @@ mod test {
     #[test]
     fn test_status_to_binary_string_works_with_defaults() {
         let status = Status::new();
-        assert_eq!(status.to_binary_string(), "00100000");
+        assert_eq!(status.to_binary_string(), "00000000");
     }
 
     #[test]
     fn test_status_to_binary_works_with_defaults() {
         let status = Status::new();
-        assert_eq!(status.to_binary(), 0b0010_0000);
+        assert_eq!(status.to_binary(), 0b0000_0000);
     }
 
     #[test]
@@ -407,7 +418,7 @@ mod test {
         status.carry = true;
         status.zero = true;
 
-        assert_eq!(status.to_binary_string(), "10100011");
+        assert_eq!(status.to_binary_string(), "10000011");
     }
 
     #[test]
@@ -600,5 +611,50 @@ mod test {
             cpu.register_a, 0x09,
             "The A register should hold the sum of the value in 0x10 and A"
         );
+    }
+
+    #[test]
+    fn test_and_immediate() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0b1010;
+        // LDA 0b1010
+        // AND 0b1001
+        // BRK
+        let program = vec![0xA9, 0b1010, 0x29, 0b1001, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0b1000, "A should AND to 0b1000");
+    }
+
+    #[test]
+    fn test_and_from_memory() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0b1010;
+        // LDA 0b1001
+        // STA 0x10
+        // LDA 0b1010
+        // AND 0x10
+        // BRK
+        let program = vec![0xA9, 0b1001, 0x85, 0x10, 0xA9, 0b1010, 0x2D, 0x10, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0b1000, "AND should read from 0x10");
+    }
+
+    #[test]
+    fn test_and_handles_zero() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0b1010;
+        // LDA 0b0110
+        // AND 0b1001
+        // BRK
+        let program = vec![0xA9, 0b0110, 0x29, 0b1001, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0b0000, "A should AND to 0s");
+        assert!(cpu.status.zero, "Zero flag should be set");
     }
 }
