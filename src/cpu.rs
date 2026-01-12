@@ -302,6 +302,8 @@ PC:\t0x{:X}",
             match opcode.instruction {
                 "ADC" => self.adc(&opcode.addressing_mode),
                 "AND" => self.and(&opcode.addressing_mode),
+                "ASL" => self.asl(&opcode.addressing_mode),
+                "ASL_A" => self.asl_a(),
                 "LDA" => self.lda(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
@@ -341,6 +343,30 @@ PC:\t0x{:X}",
         self.register_a = self.register_a & value;
 
         self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    /// `ASL` performs a bitwise left shift of 1 on a value at an address, doubling it in place.
+    fn asl(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let mut value = self.mem_read(addr);
+        println!("ASL 0x{:X} (0x{:X})", addr, value);
+
+        // Set the carry flag if the initial value has the highest bit set
+        self.set_carry_flag(value >> 7 == 1);
+
+        value = value << 1;
+        self.mem_write(addr, value);
+        self.update_zero_and_negative_flags(value);
+    }
+
+    /// `ASL_A` performs a bitwise left shift of 1 directly on the A register, doubling it.
+    fn asl_a(&mut self) {
+        println!("ASL A");
+        // Set the carry flag if the initial value has the highest bit set
+        self.set_carry_flag(self.register_a >> 7 == 1);
+        
+        self.register_a = self.register_a << 1;
+        // in the tutorial, he skips setting the zero and negative flags. I'm not sure why
     }
 
     /// `LDA`. Loads a value into the A register.
@@ -646,7 +672,6 @@ mod test {
     #[test]
     fn test_and_handles_zero() {
         let mut cpu = CPU::new();
-        cpu.register_a = 0b1010;
         // LDA 0b0110
         // AND 0b1001
         // BRK
@@ -656,5 +681,20 @@ mod test {
 
         assert_eq!(cpu.register_a, 0b0000, "A should AND to 0s");
         assert!(cpu.status.zero, "Zero flag should be set");
+    }
+
+    #[test]
+    fn test_asl_from_memory_doubles() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0b1010;
+        // LDA #10
+        // STA 0x10
+        // ASL 0x10
+        // BRK
+        let program = vec![0xA9, 10, 0x85, 0x10, 0x0E, 0x10, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.mem_read(0x10), 20, "ALS should double the value at the address");
     }
 }
