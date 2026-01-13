@@ -207,6 +207,17 @@ PC:\t0x{:X}",
         );
     }
 
+    fn print_command(&self, cmd: &str) {
+        println!("{}", cmd);
+    }
+
+    fn print_command_with_args(&self, cmd: &str, addr: u16, value: u8) {
+        println!(
+            "{} ${:X} (0x{:X} = 0b{:b} = {})",
+            cmd, addr, value, value, value
+        );
+    }
+
     /// Uses the active addressing mode to determine the atual addresses to read.
     fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
         match mode {
@@ -354,6 +365,7 @@ PC:\t0x{:X}",
                 "LSR_A" => self.lsr_a(),
                 "LSR" => self.lsr(&opcode.addressing_mode),
                 "NOP" => self.nop(),
+                "ORA" => self.ora(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "TAY" => self.tay(),
@@ -376,10 +388,7 @@ PC:\t0x{:X}",
             true => 1,
             false => 0,
         });
-        println!(
-            "ADC 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("ADC", addr, value);
 
         self.set_carry_flag((value as u16) + (self.register_a as u16) > 0xFF);
         self.update_zero_and_negative_flags(self.register_a);
@@ -390,12 +399,9 @@ PC:\t0x{:X}",
     fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!(
-            "AND 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
-        self.register_a = self.register_a & value;
+        self.print_command_with_args("AND", addr, value);
 
+        self.register_a = self.register_a & value;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
@@ -403,10 +409,7 @@ PC:\t0x{:X}",
     fn asl(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let mut value = self.mem_read(addr);
-        println!(
-            "ASL 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("ASL", addr, value);
 
         // Set the carry flag if the initial value has the highest bit set
         self.set_carry_flag(value >> 7 == 1);
@@ -418,7 +421,7 @@ PC:\t0x{:X}",
 
     /// `ASL_A` performs a bitwise left shift of 1 directly on the A register, doubling it.
     fn asl_a(&mut self) {
-        println!("ASL A");
+        self.print_command("ASL A");
         // Set the carry flag if the initial value has the highest bit set
         self.set_carry_flag(self.register_a >> 7 == 1);
 
@@ -431,10 +434,7 @@ PC:\t0x{:X}",
     fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!(
-            "BIT 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("BIT", addr, value);
 
         let result = value & self.register_a;
 
@@ -448,10 +448,7 @@ PC:\t0x{:X}",
     fn compare(&mut self, mode: &AddressingMode, target: u8) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!(
-            "CMP 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("CMP", addr, value);
 
         self.set_carry_flag(target > value);
         self.update_zero_and_negative_flags(target - value);
@@ -461,10 +458,7 @@ PC:\t0x{:X}",
     fn dec(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!(
-            "DEC 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("DEC", addr, value);
 
         let result = value.wrapping_sub(1);
 
@@ -474,7 +468,7 @@ PC:\t0x{:X}",
 
     /// `DEX` decrements the value in the X register and sets some flags accordingly.
     fn dex(&mut self) {
-        println!("DEX");
+        self.print_command("DEX");
 
         self.register_x = self.register_x.wrapping_sub(1);
 
@@ -483,7 +477,7 @@ PC:\t0x{:X}",
 
     /// `DEY` decrements the value in the Y register and sets some flags accordingly.
     fn dey(&mut self) {
-        println!("DEY");
+        self.print_command("DEY");
 
         self.register_y = self.register_y.wrapping_sub(1);
 
@@ -495,10 +489,7 @@ PC:\t0x{:X}",
     fn eor(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!(
-            "EOR 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("EOR", addr, value);
         self.register_a = self.register_a ^ value;
 
         self.update_zero_and_negative_flags(self.register_a);
@@ -508,10 +499,7 @@ PC:\t0x{:X}",
     fn inc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!(
-            "INC 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("INC", addr, value);
 
         let result = value.wrapping_add(1);
 
@@ -521,14 +509,14 @@ PC:\t0x{:X}",
 
     /// 0xE8 op code `INX`. Increments the value in the X register by 1.
     fn inx(&mut self) {
-        println!("INX");
+        self.print_command("INX");
         self.register_x = self.register_x.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_x);
     }
 
     /// 0xC8 op code `INY`. Increments the value in the Y register by 1.
     fn iny(&mut self) {
-        println!("INY");
+        self.print_command("INY");
         self.register_y = self.register_y.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_y);
     }
@@ -536,6 +524,7 @@ PC:\t0x{:X}",
     /// `JMP` jumps to a specific 16 bit memory address
     fn jmp(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
+        self.print_command_with_args("JMP", addr, 0);
 
         self.program_counter = addr;
     }
@@ -567,13 +556,14 @@ PC:\t0x{:X}",
         } else {
             self.mem_read_u16(addr)
         };
+        self.print_command_with_args("JMP I", addr, 0);
 
         self.program_counter = indirect_ref;
     }
 
     /// `JSR` Pushes the return point onto the stack and then updates the PC to the target address.
     fn jsr(&mut self) {
-        println!("JSR");
+        self.print_command("JSR");
         self.write_to_stack_u16(self.program_counter + 1);
         let target_addr = self.mem_read_u16(self.program_counter);
         self.program_counter = target_addr;
@@ -583,10 +573,7 @@ PC:\t0x{:X}",
     fn lda(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!(
-            "LDA 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("LDA", addr, value);
 
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
@@ -596,10 +583,7 @@ PC:\t0x{:X}",
     fn ldx(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!(
-            "LDX 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("LDX", addr, value);
 
         self.register_x = value;
         self.update_zero_and_negative_flags(self.register_x);
@@ -609,10 +593,7 @@ PC:\t0x{:X}",
     fn ldy(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!(
-            "LDY 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("LDY", addr, value);
 
         self.register_y = value;
         self.update_zero_and_negative_flags(self.register_y);
@@ -620,7 +601,7 @@ PC:\t0x{:X}",
 
     /// `LSR_A` performs a bitwise right shift of the value in the A register, halving it in place.
     fn lsr_a(&mut self) {
-        println!("LSR_A",);
+        self.print_command("LSR A");
 
         // Set the carry flag if the initial value has the 0 bit set.
         self.set_carry_flag(self.register_a & 1 == 1);
@@ -633,10 +614,7 @@ PC:\t0x{:X}",
     fn lsr(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let mut value = self.mem_read(addr);
-        println!(
-            "LSR 0x{:X} (0x{:X} = 0b{:b} = {})",
-            addr, value, value, value
-        );
+        self.print_command_with_args("LSR", addr, value);
 
         // Set the carry flag if the initial value has the highest bit set
         self.set_carry_flag(value & 1 == 1);
@@ -649,33 +627,45 @@ PC:\t0x{:X}",
     /// `NOP` does nothing but increment the program counter, which is already handled by the
     /// clock cycle loop.
     fn nop(&mut self) {
-        println!("NOP");
+        self.print_command("NOP");
     }
+
+    /// `ORA` does a logical OR (inclusive) between the A register and a byte from memory.
+    fn ora(&mut self, mode:&AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        self.print_command_with_args("LSR", addr, value);
+
+        self.register_a = self.register_a | value;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
 
     /// `STA`. Copies a value from the A register into memory.
     fn sta(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        println!("STA 0x{:X}", addr);
+        self.print_command_with_args("STA", addr, 0);
+
         self.mem_write(addr, self.register_a);
     }
 
     /// 0xAA Opcode `TAX`. Copies a value from register A to register X.
     fn tax(&mut self) {
-        println!("TAX");
+        self.print_command("TAX");
         self.register_x = self.register_a;
         self.update_zero_and_negative_flags(self.register_x);
     }
 
     /// 0xA8 Opcode `TAY`. Copies a value from register A to register Y.
     fn tay(&mut self) {
-        println!("TAY");
+        self.print_command("TAY");
         self.register_y = self.register_a;
         self.update_zero_and_negative_flags(self.register_y);
     }
 
     /// Used by all of the branching logic instructions to jump the PC by a given offset
     fn branch(&mut self, condition: bool) {
-        println!("BRANCH");
+        self.print_command("BRANCH");
         if condition {
             let offset = self.mem_read(self.program_counter) as i8;
             let jump_addr = self
@@ -688,7 +678,6 @@ PC:\t0x{:X}",
     }
 
     fn set_carry_flag(&mut self, should_set: bool) {
-        println!("setting carry");
         self.status.carry = should_set;
     }
 
@@ -1338,5 +1327,49 @@ mod test {
             initial_pc + 2,
             "The PC should be incremented by 1 (to read NOP) and then another (to move on to the next instruction)"
         );
+    }
+
+    #[test]
+    fn test_ora_immediate() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0b1010;
+        // LDA 0b1010
+        // ORA 0b1001
+        // BRK
+        let program = vec![0xA9, 0b1010, 0x09, 0b1001, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0b1011, "A should OR to 0b1011");
+    }
+
+    #[test]
+    fn test_ora_from_memory() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0b1010;
+        // LDA 0b1001
+        // STA 0x10
+        // LDA 0b1010
+        // ORA 0x10
+        // BRK
+        let program = vec![0xA9, 0b1001, 0x85, 0x10, 0xA9, 0b1010, 0x0D, 0x10, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0b1011, "OR should read from 0x10");
+    }
+
+    #[test]
+    fn test_ora_handles_zero() {
+        let mut cpu = CPU::new();
+        // LDA 0b0000
+        // AND 0b0000
+        // BRK
+        let program = vec![0xA9, 0b0000, 0x29, 0b0000, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0b0000, "A should OR to 0s");
+        assert!(cpu.status.zero, "Zero flag should be set");
     }
 }
