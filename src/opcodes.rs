@@ -162,14 +162,10 @@ lazy_static! {
         // JMP_I (Jump with Indirect Access)
         OpCode::new(0x6C, "JMP", 3, 5, AddressingMode::NoneAddressing),
 
-
-        // TAX
-        OpCode::new(0xaa, "TAX", 1, 2, AddressingMode::NoneAddressing),
+        // JSR (Jump to Subroutine)
+        OpCode::new(0x20, "JSR", 3, 6, AddressingMode::Absolute),
         
-        // TAY
-        OpCode::new(0xA8, "TAY", 1, 2, AddressingMode::NoneAddressing),
-
-        // LDA
+        // LDA (Load to A Register)
         OpCode::new(0xa9, "LDA", 2, 2, AddressingMode::Immediate),
         OpCode::new(0xa5, "LDA", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0xb5, "LDA", 2, 4, AddressingMode::ZeroPage_X),
@@ -179,6 +175,32 @@ lazy_static! {
         OpCode::new(0xa1, "LDA", 2, 6, AddressingMode::Indirect_X),
         OpCode::new(0xb1, "LDA", 2, 5/*+1 if page crossed*/, AddressingMode::Indirect_Y),
 
+        // LDX (Load to X Register)
+        OpCode::new(0xA2, "LDX", 2, 2, AddressingMode::Immediate),
+        OpCode::new(0xA6, "LDX", 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0xB6, "LDX", 2, 4, AddressingMode::ZeroPage_Y),
+        OpCode::new(0xAE, "LDX", 3, 4, AddressingMode::Absolute),
+        OpCode::new(0xBE, "LDX", 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_Y),
+         
+        // LDY (Load to Y Register)
+        OpCode::new(0xA0, "LDY", 2, 2, AddressingMode::Immediate),
+        OpCode::new(0xA4, "LDY", 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0xB4, "LDY", 2, 4, AddressingMode::ZeroPage_X),
+        OpCode::new(0xAC, "LDY", 3, 4, AddressingMode::Absolute),
+        OpCode::new(0xBC, "LDY", 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_X),
+
+        // LSR_A (Logical Shift Right in A register)
+        OpCode::new(0x4A, "LSR_A", 1, 2, AddressingMode::NoneAddressing),
+
+        // LSR (Logical Shift Right)
+        OpCode::new(0x46, "LSR", 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0x56, "LSR", 2, 6, AddressingMode::ZeroPage_X),
+        OpCode::new(0x4E, "LSR", 3, 6, AddressingMode::Absolute),
+        OpCode::new(0x5E, "LSR", 3, 7, AddressingMode::Absolute_X),
+
+        // NOP (No Operation)
+        OpCode::new(0xEA, "NOP", 1, 2, AddressingMode::NoneAddressing),
+          
         // STA
         OpCode::new(0x85, "STA", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0x95, "STA", 2, 4, AddressingMode::ZeroPage_X),
@@ -187,6 +209,13 @@ lazy_static! {
         OpCode::new(0x99, "STA", 3, 5, AddressingMode::Absolute_Y),
         OpCode::new(0x81, "STA", 2, 6, AddressingMode::Indirect_X),
         OpCode::new(0x91, "STA", 2, 6, AddressingMode::Indirect_Y),
+
+        // TAX
+        OpCode::new(0xaa, "TAX", 1, 2, AddressingMode::NoneAddressing),
+        
+        // TAY
+        OpCode::new(0xA8, "TAY", 1, 2, AddressingMode::NoneAddressing),
+
     ];
     pub static ref OPCODES_MAP: HashMap<u8, &'static OpCode> = {
         let mut map = HashMap::new();

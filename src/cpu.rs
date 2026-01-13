@@ -95,6 +95,13 @@ pub struct CPU {
     /// needs (holding temp values, being used as a counter, etc.)
     pub register_y: u8,
 
+    /// ## Stack Pointer (SP)
+    ///
+    /// Used to hold the address of the top of the stack (memory addresses [0x0100 .. 0x1FF]).
+    /// When a byte gets pushed to the stack the SP value decrements, and vice versa when bytes
+    /// are retrieved from the stack.
+    pub stack_pointer: u16,
+
     /// ## Processor status (P)
     ///
     /// 8-bit register represents 7 status flags that can be set or unse depending on the result of
@@ -157,7 +164,6 @@ trait Memory {
         self.mem_write(addr, low);
         self.mem_write(addr + 1, high);
     }
-
 }
 
 impl Memory for CPU {
@@ -172,14 +178,13 @@ impl Memory for CPU {
     }
 }
 
-
-
 impl CPU {
     pub fn new() -> Self {
         CPU {
             register_a: 0,
             register_x: 0,
             register_y: 0,
+            stack_pointer: 0x1FF,
             status: Status::new(),
             program_counter: 0,
             memory: [0; 0xFFFF],
@@ -280,7 +285,8 @@ PC:\t0x{:X}",
 
     /// Handles the Reset Interrupt signal sent when a cartridge is loaded.
     /// This signal informs the CPU to reset the internal state and start the program_counter at
-    /// a specific memory address pointed to by 0xFFFC (set via self.load)
+    /// a specific memory address pointed to by 0xFFFC (set via self.load).
+    /// This also resets the stack pointer to the top of the stack at 0x1FF.
     pub fn reset(&mut self) {
         self.register_a = 0;
         self.register_x = 0;
@@ -288,6 +294,7 @@ PC:\t0x{:X}",
         self.status = Status::new();
 
         self.program_counter = self.mem_read_u16(0xFFFC);
+        self.stack_pointer = 0x1FF;
     }
 
     /// Executes the program in PRG ROM.
@@ -340,7 +347,13 @@ PC:\t0x{:X}",
                 "INY" => self.iny(),
                 "JMP" => self.jmp(&opcode.addressing_mode),
                 "JMP_I" => self.jmp_i(),
+                "JSR" => self.jsr(),
                 "LDA" => self.lda(&opcode.addressing_mode),
+                "LDX" => self.ldx(&opcode.addressing_mode),
+                "LDY" => self.ldy(&opcode.addressing_mode),
+                "LSR_A" => self.lsr_a(),
+                "LSR" => self.lsr(&opcode.addressing_mode),
+                "NOP" => self.nop(),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "TAY" => self.tay(),
@@ -558,6 +571,14 @@ PC:\t0x{:X}",
         self.program_counter = indirect_ref;
     }
 
+    /// `JSR` Pushes the return point onto the stack and then updates the PC to the target address.
+    fn jsr(&mut self) {
+        println!("JSR");
+        self.write_to_stack_u16(self.program_counter + 1);
+        let target_addr = self.mem_read_u16(self.program_counter);
+        self.program_counter = target_addr;
+    }
+
     /// `LDA`. Loads a value into the A register.
     fn lda(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
@@ -569,6 +590,66 @@ PC:\t0x{:X}",
 
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    /// `LDX` Loads a value into the X register.
+    fn ldx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        println!(
+            "LDX 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
+
+        self.register_x = value;
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    /// `LDY` Loads a value into the Y register.
+    fn ldy(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        println!(
+            "LDY 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
+
+        self.register_y = value;
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    /// `LSR_A` performs a bitwise right shift of the value in the A register, halving it in place.
+    fn lsr_a(&mut self) {
+        println!("LSR_A",);
+
+        // Set the carry flag if the initial value has the 0 bit set.
+        self.set_carry_flag(self.register_a & 1 == 1);
+
+        self.register_a = self.register_a >> 1;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    /// `LSR` performs a bitwise right shift of 1 on a value at an address, doubling it in place.
+    fn lsr(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let mut value = self.mem_read(addr);
+        println!(
+            "LSR 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
+
+        // Set the carry flag if the initial value has the highest bit set
+        self.set_carry_flag(value & 1 == 1);
+
+        value = value >> 1;
+        self.mem_write(addr, value);
+        self.update_zero_and_negative_flags(value);
+    }
+
+    /// `NOP` does nothing but increment the program counter, which is already handled by the
+    /// clock cycle loop.
+    fn nop(&mut self) {
+        println!("NOP");
     }
 
     /// `STA`. Copies a value from the A register into memory.
@@ -637,6 +718,30 @@ PC:\t0x{:X}",
         } else {
             self.status.negative = false;
         }
+    }
+
+    fn read_from_stack(&mut self) -> u8 {
+        let value = self.mem_read(self.stack_pointer);
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+
+        value
+    }
+
+    fn read_from_stack_u16(&mut self) -> u16 {
+        let value = self.mem_read_u16(self.stack_pointer);
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+
+        value
+    }
+
+    fn write_to_stack(&mut self, value: u8) {
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+        self.mem_write(self.stack_pointer, value);
+    }
+
+    fn write_to_stack_u16(&mut self, value: u16) {
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+        self.mem_write_u16(self.stack_pointer, value);
     }
 }
 
@@ -952,6 +1057,40 @@ mod test {
     }
 
     #[test]
+    fn test_lsr_from_memory_halves() {
+        let mut cpu = CPU::new();
+        // LDA #10
+        // STA 0x10
+        // LSR 0x10
+        // BRK
+        let program = vec![0xA9, 10, 0x85, 0x10, 0x46, 0x10, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.mem_read(0x10),
+            5,
+            "LSR should halve the value at the address"
+        );
+    }
+
+    #[test]
+    fn test_lsr_a_halves() {
+        let mut cpu = CPU::new();
+        // LDA #10
+        // LSR_A
+        // BRK
+        let program = vec![0xA9, 10, 0x4A, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 5,
+            "LSR_A should halve the value in the A_register"
+        );
+    }
+
+    #[test]
     fn test_branch_updates_pc_when_true_positive() {
         let mut cpu = CPU::new();
         cpu.program_counter = 10;
@@ -1177,5 +1316,27 @@ mod test {
 
         assert_eq!(cpu.register_a, 0b0000, "A should AND to 0s");
         assert!(cpu.status.zero, "Zero flag should be set");
+    }
+
+    #[test]
+    fn test_nop_increments_counter() {
+        let mut cpu = CPU::new();
+
+        // set an initial value for the PC by loading an empty program and resetting the state
+        cpu.load(Vec::new());
+        cpu.reset();
+        let initial_pc = cpu.program_counter;
+
+        // NOP
+        // BRK
+        let program = vec![0xEA, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.program_counter,
+            initial_pc + 2,
+            "The PC should be incremented by 1 (to read NOP) and then another (to move on to the next instruction)"
+        );
     }
 }
