@@ -321,9 +321,13 @@ PC:\t0x{:X}",
                 "CMP" => self.compare(&opcode.addressing_mode, self.register_a),
                 "CPX" => self.compare(&opcode.addressing_mode, self.register_x),
                 "CPY" => self.compare(&opcode.addressing_mode, self.register_y),
+                "DEC" => self.dec(&opcode.addressing_mode),
+                "DEX" => self.dex(),
+                "DEY" => self.dey(),
                 "LDA" => self.lda(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
+                "TAY" => self.tay(),
                 "INX" => self.inx(),
                 _ => {
                     panic!("bad opcode found somehow")
@@ -410,6 +414,36 @@ PC:\t0x{:X}",
         self.update_zero_and_negative_flags(target - value);
     }
 
+    /// `DEC` decrements the value at a given memory address by 1 and sets some flags accordingly.
+    fn dec(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        println!("DEC 0x{:X} (0x{:X})", addr, value);
+
+        let result = value.wrapping_sub(1);
+
+        self.mem_write(addr, result);
+        self.update_zero_and_negative_flags(result);
+    }
+
+    /// `DEX` decrements the value in the X register and sets some flags accordingly.
+    fn dex(&mut self) {
+        println!("DEX");
+
+        self.register_x = self.register_x.wrapping_sub(1);
+
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+    
+    /// `DEY` decrements the value in the Y register and sets some flags accordingly.
+    fn dey(&mut self) {
+        println!("DEY");
+
+        self.register_y = self.register_y.wrapping_sub(1);
+
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
     /// `LDA`. Loads a value into the A register.
     fn lda(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
@@ -432,6 +466,13 @@ PC:\t0x{:X}",
         println!("TAX");
         self.register_x = self.register_a;
         self.update_zero_and_negative_flags(self.register_x);
+    }
+    
+    /// 0xA8 Opcode `TAY`. Copies a value from register A to register Y.
+    fn tay(&mut self) {
+        println!("TAY");
+        self.register_y = self.register_a;
+        self.update_zero_and_negative_flags(self.register_y);
     }
 
     /// 0xE8 op code `INX`. Increments the value in the X register by 1.
@@ -909,5 +950,41 @@ mod test {
         cpu.run();
 
         assert_eq!(cpu.status.overflow, false, "overflow flag should be cleared");
+    }
+
+    #[test]
+    fn test_dec_from_memory() {
+        let mut cpu = CPU::new();
+        // LDA 100
+        // STA 0x10
+        // DEC 0x10
+        let program = vec![0xA9, 100, 0x85, 0x10, 0xC6, 0x10];
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.mem_read(0x10), 99);
+    }
+
+    #[test]
+    fn test_dex() {
+        let mut cpu = CPU::new();
+        // LDA 100
+        // TAX
+        // DEX
+        let program = vec![0xA9, 100, 0xAA, 0xCA];
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_x, 99);
+    }
+    
+    #[test]
+    fn test_dey() {
+        let mut cpu = CPU::new();
+        // LDA 100
+        // TAY
+        // DEY
+        let program = vec![0xA9, 100, 0xA8, 0x88];
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_y, 99);
     }
 }

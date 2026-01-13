@@ -121,9 +121,24 @@ lazy_static! {
         OpCode::new(0xC0, "CPY", 2, 2, AddressingMode::Immediate),
         OpCode::new(0xC4, "CPY", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0xCC, "CPY", 3, 4, AddressingMode::Absolute),
-        
+
+        // DEC (Decrement Memory) 
+        OpCode::new(0xC6, "DEC", 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0xD6, "DEC", 2, 3, AddressingMode::ZeroPage_X),
+        OpCode::new(0xCE, "DEC", 3, 4, AddressingMode::Absolute),
+        OpCode::new(0xDE, "DEC", 3, 4, AddressingMode::Absolute_X),
+
+        // DEX (Decrement X)
+        OpCode::new(0xCA, "DEX", 1, 2, AddressingMode::NoneAddressing),
+
+        // DEY (Decrement Y)
+        OpCode::new(0x88, "DEY", 1, 2, AddressingMode::NoneAddressing),
+
         // TAX
         OpCode::new(0xaa, "TAX", 1, 2, AddressingMode::NoneAddressing),
+        
+        // TAY
+        OpCode::new(0xA8, "TAY", 1, 2, AddressingMode::NoneAddressing),
 
         //INX
         OpCode::new(0xe8, "INX", 1, 2, AddressingMode::NoneAddressing),
