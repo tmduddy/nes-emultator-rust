@@ -324,6 +324,7 @@ PC:\t0x{:X}",
                 "DEC" => self.dec(&opcode.addressing_mode),
                 "DEX" => self.dex(),
                 "DEY" => self.dey(),
+                "EOR" => self.eor(&opcode.addressing_mode),
                 "LDA" => self.lda(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
@@ -348,7 +349,7 @@ PC:\t0x{:X}",
             true => 1,
             false => 0,
         });
-        println!("ADC 0x{:X} (0x{:X})", addr, value);
+        println!("ADC 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
 
         self.set_carry_flag((value as u16) + (self.register_a as u16) > 0xFF);
         self.update_zero_and_negative_flags(self.register_a);
@@ -359,7 +360,7 @@ PC:\t0x{:X}",
     fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("AND 0x{:X} (0x{:X})", addr, value);
+        println!("AND 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
         self.register_a = self.register_a & value;
 
         self.update_zero_and_negative_flags(self.register_a);
@@ -369,7 +370,7 @@ PC:\t0x{:X}",
     fn asl(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let mut value = self.mem_read(addr);
-        println!("ASL 0x{:X} (0x{:X})", addr, value);
+        println!("ASL 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
 
         // Set the carry flag if the initial value has the highest bit set
         self.set_carry_flag(value >> 7 == 1);
@@ -394,7 +395,7 @@ PC:\t0x{:X}",
     fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("BIT 0x{:X} (0x{:X})", addr, value);
+        println!("BIT 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
 
         let result = value & self.register_a;
 
@@ -408,7 +409,7 @@ PC:\t0x{:X}",
     fn compare(&mut self, mode: &AddressingMode, target: u8) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("CMP 0x{:X} (0x{:X})", addr, value);
+        println!("CMP 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
 
         self.set_carry_flag(target > value);
         self.update_zero_and_negative_flags(target - value);
@@ -418,7 +419,7 @@ PC:\t0x{:X}",
     fn dec(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("DEC 0x{:X} (0x{:X})", addr, value);
+        println!("DEC 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
 
         let result = value.wrapping_sub(1);
 
@@ -443,12 +444,23 @@ PC:\t0x{:X}",
 
         self.update_zero_and_negative_flags(self.register_y);
     }
+    
+    /// `EOR` performs a bitwise XOR between the A register and a memory value and sets some
+    /// flags accordingly.
+    fn eor(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        println!("EOR 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
+        self.register_a = self.register_a ^ value;
+
+        self.update_zero_and_negative_flags(self.register_a);
+    }
 
     /// `LDA`. Loads a value into the A register.
     fn lda(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("LDA 0x{:X} (0x{:X})", addr, value);
+        println!("LDA 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
 
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
@@ -986,5 +998,49 @@ mod test {
         cpu.load_and_run(program);
 
         assert_eq!(cpu.register_y, 99);
+    }
+
+    #[test]
+    fn test_eor_immediate() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0b1010;
+        // LDA 0b1010
+        // EOR 0b1001
+        // BRK
+        let program = vec![0xA9, 0b1010, 0x49, 0b1001, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0b0011, "A should AND to 0b1011");
+    }
+
+    #[test]
+    fn test_eor_from_memory() {
+        let mut cpu = CPU::new();
+        cpu.register_a = 0b1010;
+        // LDA 0b1001
+        // STA 0x10
+        // LDA 0b1010
+        // EOR 0x10
+        // BRK
+        let program = vec![0xA9, 0b1001, 0x85, 0x10, 0xA9, 0b1010, 0x4D, 0x10, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0b0011, "AND should read from 0x10");
+    }
+
+    #[test]
+    fn test_eor_handles_zero() {
+        let mut cpu = CPU::new();
+        // LDA 0b0110
+        // AND 0b0110
+        // BRK
+        let program = vec![0xA9, 0b0110, 0x49, 0b0110, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.register_a, 0b0000, "A should AND to 0s");
+        assert!(cpu.status.zero, "Zero flag should be set");
     }
 }
