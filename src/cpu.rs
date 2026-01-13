@@ -319,6 +319,8 @@ PC:\t0x{:X}",
                 "CLI" => self.set_interrupt_disable(false),
                 "CLV" => self.set_overflow_flag(false),
                 "CMP" => self.compare(&opcode.addressing_mode, self.register_a),
+                "CPX" => self.compare(&opcode.addressing_mode, self.register_x),
+                "CPY" => self.compare(&opcode.addressing_mode, self.register_y),
                 "LDA" => self.lda(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
@@ -907,12 +909,5 @@ mod test {
         cpu.run();
 
         assert_eq!(cpu.status.overflow, false, "overflow flag should be cleared");
-    }
-
-    #[test]
-    fn test_cmp_updates_flags() {
-        let mut cpu = CPU::new();
-
-
     }
 }
