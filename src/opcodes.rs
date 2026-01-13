@@ -59,9 +59,49 @@ lazy_static! {
         // ASL_A (Arithmetic Shift Left [Accumulator Addressing Mode])
         OpCode::new(0x0a, "ASL_A", 1, 2, AddressingMode::ZeroPage),
 
+        // BCC (Branch if Carry Clear)
+        OpCode::new(0x90, "BCC", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
+
+        // BCS (Branch if Carry Set)
+        OpCode::new(0xB0, "BCS", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
+        
+        // BEQ (Branch if Equal)
+        OpCode::new(0xF0, "BEQ", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
+
+        // BIT (Bit Test)
+        OpCode::new(0x24, "BIT", 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0x2C, "BIT", 3, 4, AddressingMode::Absolute),
+
+        // BMI (Branch if Minus)
+        OpCode::new(0x30, "BMI", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
+       
+        // BNE (Branch if Not Equal)
+        OpCode::new(0xD0, "BNE", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
+       
+        // BPL (Branch if Positive)
+        OpCode::new(0x10, "BPL", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
+       
         // BRK
         OpCode::new(0x00, "BRK", 1, 7, AddressingMode::NoneAddressing),
 
+        // BVC (Branch if Overflow Clear)
+        OpCode::new(0x50, "BVC", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
+
+        // BVS (Branch if Overflow Set)
+        OpCode::new(0x70, "BVS", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
+
+        //CLC (Clear Carry Flag)
+        OpCode::new(0x18, "CLC", 1, 2, AddressingMode::NoneAddressing),
+
+        //CLD (Clear Decimal Mode)
+        OpCode::new(0xD8, "CLD", 1, 2, AddressingMode::NoneAddressing),
+
+        //CLI (Clear Interrupt Disable)
+        OpCode::new(0x58, "CLI", 1, 2, AddressingMode::NoneAddressing),
+
+        //CLV (Clear Overflow Flag)
+        OpCode::new(0xB8, "CLV", 1, 2, AddressingMode::NoneAddressing),
+        
         // TAX
         OpCode::new(0xaa, "TAX", 1, 2, AddressingMode::NoneAddressing),
 

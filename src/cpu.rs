@@ -304,11 +304,24 @@ PC:\t0x{:X}",
                 "AND" => self.and(&opcode.addressing_mode),
                 "ASL" => self.asl(&opcode.addressing_mode),
                 "ASL_A" => self.asl_a(),
+                "BCC" => self.branch(!self.status.carry),
+                "BCS" => self.branch(self.status.carry),
+                "BEQ" => self.branch(self.status.zero),
+                "BIT" => self.bit(&opcode.addressing_mode),
+                "BMI" => self.branch(self.status.negative),
+                "BNE" => self.branch(!self.status.zero),
+                "BPL" => self.branch(!self.status.negative),
+                "BRK" => return,
+                "BVC" => self.branch(!self.status.overflow),
+                "BVS" => self.branch(self.status.overflow),
+                "CLC" => self.set_carry_flag(false),
+                "CLD" => self.set_decimal_mode(false),
+                "CLI" => self.set_interrupt_disable(false),
+                "CLV" => self.set_overflow_flag(false),
                 "LDA" => self.lda(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "INX" => self.inx(),
-                "BRK" => return,
                 _ => {
                     panic!("bad opcode found somehow")
                 }
@@ -364,9 +377,23 @@ PC:\t0x{:X}",
         println!("ASL A");
         // Set the carry flag if the initial value has the highest bit set
         self.set_carry_flag(self.register_a >> 7 == 1);
-        
+
         self.register_a = self.register_a << 1;
         // in the tutorial, he skips setting the zero and negative flags. I'm not sure why
+    }
+
+    /// `BIT` performs an AND between a value in memory and the A register then sets some flags
+    /// accordingly. The result is not kept.
+    fn bit(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        println!("BIT 0x{:X} (0x{:X})", addr, value);
+
+        let result = value & self.register_a;
+
+        self.status.zero = result == 0;
+        self.status.overflow = value & 0b1000_0000 > 0;
+        self.status.negative = value & 0b0100_0000 > 0;
     }
 
     /// `LDA`. Loads a value into the A register.
@@ -400,8 +427,35 @@ PC:\t0x{:X}",
         self.update_zero_and_negative_flags(self.register_x);
     }
 
+    /// Used by all of the branching logic instructions to jump the PC by a given offset
+    fn branch(&mut self, condition: bool) {
+        println!("BRANCH");
+        if condition {
+            let offset = self.mem_read(self.program_counter) as i8;
+            let jump_addr = self
+                .program_counter
+                .wrapping_add(1) // Step forward one now that we've read the offset
+                .wrapping_add(offset as u16); // Jump up (or down!) by the provided offset
+
+            self.program_counter = jump_addr;
+        }
+    }
+
     fn set_carry_flag(&mut self, should_set: bool) {
+        println!("setting carry");
         self.status.carry = should_set;
+    }
+    
+    fn set_decimal_mode(&mut self, should_set: bool) {
+        self.status.decimal = should_set;
+    }
+   
+    fn set_interrupt_disable(&mut self, should_set: bool) {
+        self.status.interrupt_disable = should_set;
+    }
+    
+    fn set_overflow_flag(&mut self, should_set: bool) {
+        self.status.overflow = should_set;
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8) {
@@ -686,7 +740,6 @@ mod test {
     #[test]
     fn test_asl_from_memory_doubles() {
         let mut cpu = CPU::new();
-        cpu.register_a = 0b1010;
         // LDA #10
         // STA 0x10
         // ASL 0x10
@@ -695,6 +748,152 @@ mod test {
 
         cpu.load_and_run(program);
 
-        assert_eq!(cpu.mem_read(0x10), 20, "ALS should double the value at the address");
+        assert_eq!(
+            cpu.mem_read(0x10),
+            20,
+            "ALS should double the value at the address"
+        );
+    }
+
+    #[test]
+    fn test_branch_updates_pc_when_true_positive() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 10;
+        cpu.memory[10] = 5;
+        cpu.branch(true);
+
+        assert_eq!(
+            cpu.program_counter, 16,
+            "PC should be updated by 1 (read) then 5 (content of memory at original PC)"
+        )
+    }
+
+    #[test]
+    fn test_branch_noops_when_false() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 10;
+        cpu.memory[10] = 5;
+        cpu.branch(false);
+
+        assert_eq!(cpu.program_counter, 10, "PC counter should be unchanged")
+    }
+
+    #[test]
+    fn test_branch_updates_pc_when_true_negative() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 10;
+        cpu.memory[10] = 0b1111_1011; // -5 via 2s complement
+        cpu.branch(true);
+
+        assert_eq!(
+            cpu.program_counter, 6,
+            "PC should be updated by 1 (read) then -5 (content of memory at original PC)"
+        );
+    }
+
+    #[test]
+    fn test_branch_updates_pc_when_true_and_wraps() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 0xFFFE; // one less than max address
+        cpu.memory[0xFFFE] = 5;
+        cpu.branch(true);
+
+        assert_eq!(
+            cpu.program_counter, 4,
+            "PC should be updated by 1 (read) taking it to 0xFFFF then 5, taking it to 4 after wrapping"
+        );
+    }
+
+    #[test]
+    fn test_bit_sets_flags_from_memory() {
+        let mut cpu = CPU::new();
+        // LDA 0b1100_0000
+        // STA 0x10
+        // LDA 0b0011_1111
+        // BIT 0x10
+        // BRK
+        let program = vec![
+            0xA9,
+            0b1100_0000,
+            0x85,
+            0x10,
+            0xA9,
+            0b0011_1111,
+            0x24,
+            0x10,
+            0x00,
+        ];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.status.overflow, true,
+            "the overflow bit should be set by Bit 6 of the memory"
+        );
+        assert_eq!(
+            cpu.status.negative, true,
+            "the negative bit should be set by Bit 7 of the memory"
+        );
+        assert_eq!(
+            cpu.status.zero, true,
+            "the zero bit should be set by the result of the AND"
+        );
+    }
+
+    #[test]
+    fn test_clc_clears_carry() {
+        let mut cpu = CPU::new();
+        cpu.status.carry = true;
+        // CLC
+        // BRK
+        let program = vec![0x18, 0x00];
+        cpu.load(program);
+        cpu.program_counter = 0x8000;
+        cpu.run();
+
+        assert_eq!(cpu.status.carry, false, "carry flag should be cleared");
+    }
+
+    #[test]
+    fn test_cld_clears_decimal() {
+        let mut cpu = CPU::new();
+        cpu.status.decimal = true;
+        // CLD
+        // BRK
+        let program = vec![0xD8, 0x00];
+        cpu.load(program);
+        cpu.program_counter = 0x8000;
+        cpu.run();
+
+        cpu.set_carry_flag(false);
+        assert_eq!(cpu.status.decimal, false, "decimal flag should be cleared");
+    }
+
+    #[test]
+    fn test_cli_clears_interrupt() {
+        let mut cpu = CPU::new();
+        cpu.status.interrupt_disable = true;
+        // CLI
+        // BRK
+        let program = vec![0x58, 0x00];
+        cpu.load(program);
+        cpu.program_counter = 0x8000;
+        cpu.run();
+
+        assert_eq!(cpu.status.interrupt_disable, false, "interrupt_disable flag should be cleared");
+    }
+
+    #[test]
+    fn test_clv_clears_overflow() {
+        let mut cpu = CPU::new();
+        cpu.status.overflow = true;
+        // CLV
+        // BRK
+        let program = vec![0xB8, 0x00];
+        cpu.load(program);
+        cpu.program_counter = 0x8000;
+        cpu.run();
+
+        assert_eq!(cpu.status.overflow, false, "overflow flag should be cleared");
     }
 }
