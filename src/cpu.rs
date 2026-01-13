@@ -131,6 +131,49 @@ pub struct CPU {
     memory: [u8; 0xFFFF],
 }
 
+trait Memory {
+    fn mem_read(&self, addr: u16) -> u8;
+    fn mem_write(&mut self, addr: u16, value: u8) -> ();
+
+    /// Read 2 bytes at once fromt he memory array at the given address (index), accounting for
+    /// the little endian encoding expected by the NES.
+    ///
+    /// e.g. $12_34 -> 34_12
+    fn mem_read_u16(&mut self, addr: u16) -> u16 {
+        // swap the positions of the most and least signficant 8 bits.
+        let low = self.mem_read(addr) as u16;
+        let high = self.mem_read(addr + 1) as u16;
+        high << 8 | low
+    }
+
+    /// Write 2 bytes at once fromt he memory array at the given address (index), accounting for
+    /// the little endian encoding expected by the NES.
+    ///
+    /// e.g. writing 34_12 will store $1234
+    fn mem_write_u16(&mut self, addr: u16, data: u16) {
+        // swap the positions of the most and least signficant 8 bits.
+        let high = (data >> 8) as u8;
+        let low = (data & 0xff) as u8;
+        self.mem_write(addr, low);
+        self.mem_write(addr + 1, high);
+    }
+
+}
+
+impl Memory for CPU {
+    /// Read one byte from the memory array at the given address (index).
+    fn mem_read(&self, addr: u16) -> u8 {
+        self.memory[addr as usize]
+    }
+
+    /// Write one byte to the memory array at the given address (index).
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        self.memory[addr as usize] = data;
+    }
+}
+
+
+
 impl CPU {
     pub fn new() -> Self {
         CPU {
@@ -218,39 +261,6 @@ PC:\t0x{:X}",
                 panic!("mode {:?} is not supported", mode);
             }
         }
-    }
-
-    /// Read one byte from the memory array at the given address (index).
-    fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
-    }
-
-    /// Write one byte to the memory array at the given address (index).
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
-    }
-
-    /// Read 2 bytes at once fromt he memory array at the given address (index), accounting for
-    /// the little endian encoding expected by the NES.
-    ///
-    /// e.g. $12_34 -> 34_12
-    fn mem_read_u16(&mut self, addr: u16) -> u16 {
-        // swap the positions of the most and least signficant 8 bits.
-        let low = self.mem_read(addr) as u16;
-        let high = self.mem_read(addr + 1) as u16;
-        high << 8 | low
-    }
-
-    /// Write 2 bytes at once fromt he memory array at the given address (index), accounting for
-    /// the little endian encoding expected by the NES.
-    ///
-    /// e.g. writing 34_12 will store $1234
-    fn mem_write_u16(&mut self, addr: u16, data: u16) {
-        // swap the positions of the most and least signficant 8 bits.
-        let high = (data >> 8) as u8;
-        let low = (data & 0xff) as u8;
-        self.mem_write(addr, low);
-        self.mem_write(addr + 1, high);
     }
 
     /// Loads a given program into PRG ROM
