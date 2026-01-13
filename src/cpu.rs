@@ -318,6 +318,7 @@ PC:\t0x{:X}",
                 "CLD" => self.set_decimal_mode(false),
                 "CLI" => self.set_interrupt_disable(false),
                 "CLV" => self.set_overflow_flag(false),
+                "CMP" => self.compare(&opcode.addressing_mode, self.register_a),
                 "LDA" => self.lda(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
@@ -394,6 +395,17 @@ PC:\t0x{:X}",
         self.status.zero = result == 0;
         self.status.overflow = value & 0b1000_0000 > 0;
         self.status.negative = value & 0b0100_0000 > 0;
+    }
+    
+    /// The "compare" family of instructios compares a register with a memory value and sets some 
+    /// flags accordingly. The result is not kept.
+    fn compare(&mut self, mode: &AddressingMode, target: u8) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        println!("CMP 0x{:X} (0x{:X})", addr, value);
+
+        self.set_carry_flag(target > value);
+        self.update_zero_and_negative_flags(target - value);
     }
 
     /// `LDA`. Loads a value into the A register.
@@ -895,5 +907,12 @@ mod test {
         cpu.run();
 
         assert_eq!(cpu.status.overflow, false, "overflow flag should be cleared");
+    }
+
+    #[test]
+    fn test_cmp_updates_flags() {
+        let mut cpu = CPU::new();
+
+
     }
 }
