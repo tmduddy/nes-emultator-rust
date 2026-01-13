@@ -325,11 +325,15 @@ PC:\t0x{:X}",
                 "DEX" => self.dex(),
                 "DEY" => self.dey(),
                 "EOR" => self.eor(&opcode.addressing_mode),
+                "INC" => self.inc(&opcode.addressing_mode),
+                "INX" => self.inx(),
+                "INY" => self.iny(),
+                "JMP" => self.jmp(&opcode.addressing_mode),
+                "JMP_I" => self.jmp_i(),
                 "LDA" => self.lda(&opcode.addressing_mode),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "TAY" => self.tay(),
-                "INX" => self.inx(),
                 _ => {
                     panic!("bad opcode found somehow")
                 }
@@ -349,7 +353,10 @@ PC:\t0x{:X}",
             true => 1,
             false => 0,
         });
-        println!("ADC 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
+        println!(
+            "ADC 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
 
         self.set_carry_flag((value as u16) + (self.register_a as u16) > 0xFF);
         self.update_zero_and_negative_flags(self.register_a);
@@ -360,7 +367,10 @@ PC:\t0x{:X}",
     fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("AND 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
+        println!(
+            "AND 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
         self.register_a = self.register_a & value;
 
         self.update_zero_and_negative_flags(self.register_a);
@@ -370,7 +380,10 @@ PC:\t0x{:X}",
     fn asl(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let mut value = self.mem_read(addr);
-        println!("ASL 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
+        println!(
+            "ASL 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
 
         // Set the carry flag if the initial value has the highest bit set
         self.set_carry_flag(value >> 7 == 1);
@@ -395,7 +408,10 @@ PC:\t0x{:X}",
     fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("BIT 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
+        println!(
+            "BIT 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
 
         let result = value & self.register_a;
 
@@ -403,13 +419,16 @@ PC:\t0x{:X}",
         self.status.overflow = value & 0b1000_0000 > 0;
         self.status.negative = value & 0b0100_0000 > 0;
     }
-    
-    /// The "compare" family of instructios compares a register with a memory value and sets some 
+
+    /// The "compare" family of instructios compares a register with a memory value and sets some
     /// flags accordingly. The result is not kept.
     fn compare(&mut self, mode: &AddressingMode, target: u8) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("CMP 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
+        println!(
+            "CMP 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
 
         self.set_carry_flag(target > value);
         self.update_zero_and_negative_flags(target - value);
@@ -419,7 +438,10 @@ PC:\t0x{:X}",
     fn dec(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("DEC 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
+        println!(
+            "DEC 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
 
         let result = value.wrapping_sub(1);
 
@@ -435,7 +457,7 @@ PC:\t0x{:X}",
 
         self.update_zero_and_negative_flags(self.register_x);
     }
-    
+
     /// `DEY` decrements the value in the Y register and sets some flags accordingly.
     fn dey(&mut self) {
         println!("DEY");
@@ -444,23 +466,96 @@ PC:\t0x{:X}",
 
         self.update_zero_and_negative_flags(self.register_y);
     }
-    
+
     /// `EOR` performs a bitwise XOR between the A register and a memory value and sets some
     /// flags accordingly.
     fn eor(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("EOR 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
+        println!(
+            "EOR 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
         self.register_a = self.register_a ^ value;
 
         self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    /// `INC` increments the value at a given memory address by 1 and sets some flags accordingly.
+    fn inc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        println!(
+            "INC 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
+
+        let result = value.wrapping_add(1);
+
+        self.mem_write(addr, result);
+        self.update_zero_and_negative_flags(result);
+    }
+
+    /// 0xE8 op code `INX`. Increments the value in the X register by 1.
+    fn inx(&mut self) {
+        println!("INX");
+        self.register_x = self.register_x.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    /// 0xC8 op code `INY`. Increments the value in the Y register by 1.
+    fn iny(&mut self) {
+        println!("INY");
+        self.register_y = self.register_y.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    /// `JMP` jumps to a specific 16 bit memory address
+    fn jmp(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+
+        self.program_counter = addr;
+    }
+
+    /// `JMP_I` provides a unique "Indirect" address mode not supported by our AddressingMode
+    /// system.
+    /// Note: there is a bug with the 6502 chip in this mode in cases where the address falls on
+    /// a page boundary (i.e. $xxFF) The LSB will be correctly read from $xxFF, but the MSB will
+    /// be read from $xx00.
+    /// ## Example:
+    /// Given the following memory state:
+    /// addr  | value
+    /// ------|------
+    /// $3000 | $10
+    /// ...
+    /// $30FF | $20
+    /// $3100 | $30
+    /// you would expect the command `JMP $30FF` to jump to $3020, but it will actually jump to
+    /// $1020 because of this page boundary bug.
+    fn jmp_i(&mut self) {
+        let addr = self.mem_read_u16(self.program_counter);
+
+        // If not for the bug described above, indirect_ref could be self.mem_read_u16(addr).
+        // Instead we need to do some little endian encoding work to find the bugged location.
+        let indirect_ref = if addr & 0x00FF == 0x00FF {
+            let low = self.mem_read(addr);
+            let high = self.mem_read(addr & 0xFF00);
+            (high as u16) << 8 | (low as u16)
+        } else {
+            self.mem_read_u16(addr)
+        };
+
+        self.program_counter = indirect_ref;
     }
 
     /// `LDA`. Loads a value into the A register.
     fn lda(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        println!("LDA 0x{:X} (0x{:X} = 0b{:b} = {})", addr, value, value, value);
+        println!(
+            "LDA 0x{:X} (0x{:X} = 0b{:b} = {})",
+            addr, value, value, value
+        );
 
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
@@ -479,19 +574,12 @@ PC:\t0x{:X}",
         self.register_x = self.register_a;
         self.update_zero_and_negative_flags(self.register_x);
     }
-    
+
     /// 0xA8 Opcode `TAY`. Copies a value from register A to register Y.
     fn tay(&mut self) {
         println!("TAY");
         self.register_y = self.register_a;
         self.update_zero_and_negative_flags(self.register_y);
-    }
-
-    /// 0xE8 op code `INX`. Increments the value in the X register by 1.
-    fn inx(&mut self) {
-        println!("INX");
-        self.register_x = self.register_x.wrapping_add(1);
-        self.update_zero_and_negative_flags(self.register_x);
     }
 
     /// Used by all of the branching logic instructions to jump the PC by a given offset
@@ -512,15 +600,15 @@ PC:\t0x{:X}",
         println!("setting carry");
         self.status.carry = should_set;
     }
-    
+
     fn set_decimal_mode(&mut self, should_set: bool) {
         self.status.decimal = should_set;
     }
-   
+
     fn set_interrupt_disable(&mut self, should_set: bool) {
         self.status.interrupt_disable = should_set;
     }
-    
+
     fn set_overflow_flag(&mut self, should_set: bool) {
         self.status.overflow = should_set;
     }
@@ -695,6 +783,37 @@ mod test {
         assert_eq!(
             cpu.register_x, 1,
             "the value in X should rollover to 0 and start counting up again"
+        );
+    }
+
+    #[test]
+    fn test_iny_handles_zero() {
+        let mut cpu = CPU::new();
+        // LDA #$0xFF
+        // TAY
+        // INY
+        // BRK
+        let program = vec![0xA9, 0xFF, 0xA8, 0xC8, 0x00];
+
+        cpu.load_and_run(program);
+        assert_eq!(cpu.register_y, 0, "the value in Y should rollover to 0");
+        assert!(cpu.status.zero, "Zero flag should be set");
+    }
+
+    #[test]
+    fn test_iny_overflow() {
+        let mut cpu = CPU::new();
+        // LDA #$0xFF
+        // TAX
+        // INY
+        // INY
+        // BRK
+        let program = vec![0xA9, 0xFF, 0xA8, 0xC8, 0xC8, 0x00];
+
+        cpu.load_and_run(program);
+        assert_eq!(
+            cpu.register_y, 1,
+            "the value in Y should rollover to 0 and start counting up again"
         );
     }
 
@@ -947,7 +1066,10 @@ mod test {
         cpu.program_counter = 0x8000;
         cpu.run();
 
-        assert_eq!(cpu.status.interrupt_disable, false, "interrupt_disable flag should be cleared");
+        assert_eq!(
+            cpu.status.interrupt_disable, false,
+            "interrupt_disable flag should be cleared"
+        );
     }
 
     #[test]
@@ -961,7 +1083,10 @@ mod test {
         cpu.program_counter = 0x8000;
         cpu.run();
 
-        assert_eq!(cpu.status.overflow, false, "overflow flag should be cleared");
+        assert_eq!(
+            cpu.status.overflow, false,
+            "overflow flag should be cleared"
+        );
     }
 
     #[test]
@@ -987,7 +1112,7 @@ mod test {
 
         assert_eq!(cpu.register_x, 99);
     }
-    
+
     #[test]
     fn test_dey() {
         let mut cpu = CPU::new();

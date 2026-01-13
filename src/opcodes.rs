@@ -144,14 +144,30 @@ lazy_static! {
         OpCode::new(0x41, "EOR", 2, 6, AddressingMode::Indirect_X),
         OpCode::new(0x51, "EOR", 2, 5/*+1 if page crossed*/, AddressingMode::Indirect_Y),
 
+        // INC (Increment Memory)
+        OpCode::new(0xE6, "INC", 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0xF6, "INC", 2, 6, AddressingMode::ZeroPage_X),
+        OpCode::new(0xEE, "INC", 3, 6, AddressingMode::Absolute),
+        OpCode::new(0xFE, "INC", 3, 7, AddressingMode::Absolute_X),
+
+        //INX (Increment X Register)
+        OpCode::new(0xE8, "INX", 1, 2, AddressingMode::NoneAddressing),
+
+        //INY (Increment Y Register)
+        OpCode::new(0xC8, "INY", 1, 2, AddressingMode::NoneAddressing),
+
+        // JMP (Jump)
+        OpCode::new(0x4C, "JMP", 3, 3, AddressingMode::Absolute),
+
+        // JMP_I (Jump with Indirect Access)
+        OpCode::new(0x6C, "JMP", 3, 5, AddressingMode::NoneAddressing),
+
+
         // TAX
         OpCode::new(0xaa, "TAX", 1, 2, AddressingMode::NoneAddressing),
         
         // TAY
         OpCode::new(0xA8, "TAY", 1, 2, AddressingMode::NoneAddressing),
-
-        //INX
-        OpCode::new(0xe8, "INX", 1, 2, AddressingMode::NoneAddressing),
 
         // LDA
         OpCode::new(0xa9, "LDA", 2, 2, AddressingMode::Immediate),
