@@ -396,6 +396,8 @@ PC:\t0x{:X}",
                 "RTS" => self.rts(),
                 "SBC" => self.sbc(&opcode.addressing_mode),
                 "SEC" => self.sec(),
+                "SED" => self.sed(),
+                "SEI" => self.sei(),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "TAY" => self.tay(),
@@ -833,6 +835,18 @@ PC:\t0x{:X}",
     fn sec(&mut self) {
         self.print_command("SEC");
         self.status.carry = true;
+    }
+   
+    /// `SED` sets the Decimal Mode flag to 1.
+    fn sed(&mut self) {
+        self.print_command("SED");
+        self.status.decimal = true;
+    }
+    
+    /// `SEI` sets the Interrupt Disable flag to 1.
+    fn sei(&mut self) {
+        self.print_command("SEI");
+        self.status.interrupt_disable = true;
     }
 
     /// `STA`. Copies a value from the A register into memory.
@@ -1359,52 +1373,6 @@ mod test {
     }
 
     #[test]
-    fn test_clc_clears_carry() {
-        let mut cpu = CPU::new();
-        cpu.status.carry = true;
-        // CLC
-        // BRK
-        let program = vec![0x18, 0x00];
-        cpu.load(program);
-        cpu.program_counter = 0x8000;
-        cpu.run();
-
-        assert_eq!(cpu.status.carry, false, "carry flag should be cleared");
-    }
-
-    #[test]
-    fn test_cld_clears_decimal() {
-        let mut cpu = CPU::new();
-        cpu.status.decimal = true;
-        // CLD
-        // BRK
-        let program = vec![0xD8, 0x00];
-        cpu.load(program);
-        cpu.program_counter = 0x8000;
-        cpu.run();
-
-        cpu.set_carry_flag(false);
-        assert_eq!(cpu.status.decimal, false, "decimal flag should be cleared");
-    }
-
-    #[test]
-    fn test_cli_clears_interrupt() {
-        let mut cpu = CPU::new();
-        cpu.status.interrupt_disable = true;
-        // CLI
-        // BRK
-        let program = vec![0x58, 0x00];
-        cpu.load(program);
-        cpu.program_counter = 0x8000;
-        cpu.run();
-
-        assert_eq!(
-            cpu.status.interrupt_disable, false,
-            "interrupt_disable flag should be cleared"
-        );
-    }
-
-    #[test]
     fn test_clv_clears_overflow() {
         let mut cpu = CPU::new();
         cpu.status.overflow = true;
@@ -1819,7 +1787,7 @@ mod test {
         assert!(!cpu.status.negative);
     }
 
-    #[test] //todo
+    #[test]
     fn test_sbc_immediate_handles_zero() {
         let mut cpu = CPU::new();
         // SEC
@@ -1838,7 +1806,7 @@ mod test {
         assert!(cpu.status.zero);
     }
 
-    #[test] // todo
+    #[test]
     fn test_sbc_adds_data_from_memory() {
         let mut cpu = CPU::new();
         // SEC
@@ -1856,5 +1824,74 @@ mod test {
             "The A register should hold the difference between the value at the addr and A"
         );
         assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn test_sec_sets_carry() {
+        let mut cpu = CPU::new();
+        // SEC
+        // BRK
+        let program = vec![0x38, 0x00];
+        cpu.load_and_run(program);
+
+        assert!(cpu.status.carry);
+    }
+
+    #[test]
+    fn test_clc_clears_carry() {
+        let mut cpu = CPU::new();
+        // SEC
+        // CLC
+        // BRK
+        let program = vec![0x38, 0x18, 0x00];
+        cpu.load_and_run(program);
+
+        assert!(!cpu.status.carry);
+    }
+    
+    #[test]
+    fn test_sed_sets_decimal() {
+        let mut cpu = CPU::new();
+        // SED
+        // BRK
+        let program = vec![0xF8, 0x00];
+        cpu.load_and_run(program);
+
+        assert!(cpu.status.decimal);
+    }
+
+    #[test]
+    fn test_cld_clears_decimal() {
+        let mut cpu = CPU::new();
+        // SEC
+        // CLC
+        // BRK
+        let program = vec![0xF8, 0xD8, 0x00];
+        cpu.load_and_run(program);
+
+        assert!(!cpu.status.decimal);
+    }
+
+    #[test]
+    fn test_sei_sets_interrupt() {
+        let mut cpu = CPU::new();
+        // SEI
+        // BRK
+        let program = vec![0x78, 0x00];
+        cpu.load_and_run(program);
+
+        assert!(cpu.status.interrupt_disable);
+    }
+
+    #[test]
+    fn test_cli_clears_interrupt() {
+        let mut cpu = CPU::new();
+        // SEI
+        // CLI
+        // BRK
+        let program = vec![0x78, 0x58, 0x00];
+        cpu.load_and_run(program);
+
+        assert!(!cpu.status.interrupt_disable);
     }
 }

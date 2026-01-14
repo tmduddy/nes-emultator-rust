@@ -261,7 +261,13 @@ lazy_static! {
         // SEC (Set Carry Flag)
         OpCode::new(0x38, "SEC", 1, 2, AddressingMode::NoneAddressing),
 
-         // STA
+        // SED (Set Decimal Mode)
+        OpCode::new(0xF8, "SED", 1, 2, AddressingMode::NoneAddressing),
+
+        // SEI (Set Interrupt Disable)
+        OpCode::new(0x78, "SEI", 1, 2, AddressingMode::NoneAddressing),
+        
+        // STA
         OpCode::new(0x85, "STA", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0x95, "STA", 2, 4, AddressingMode::ZeroPage_X),
         OpCode::new(0x8d, "STA", 3, 4, AddressingMode::Absolute),
