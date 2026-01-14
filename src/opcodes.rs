@@ -64,7 +64,7 @@ lazy_static! {
 
         // BCS (Branch if Carry Set)
         OpCode::new(0xB0, "BCS", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
-        
+
         // BEQ (Branch if Equal)
         OpCode::new(0xF0, "BEQ", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
 
@@ -74,13 +74,13 @@ lazy_static! {
 
         // BMI (Branch if Minus)
         OpCode::new(0x30, "BMI", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
-       
+
         // BNE (Branch if Not Equal)
         OpCode::new(0xD0, "BNE", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
-       
+
         // BPL (Branch if Positive)
         OpCode::new(0x10, "BPL", 2, 2/*+1 if branch succeeds +2 if to new page*/, AddressingMode::NoneAddressing),
-       
+
         // BRK
         OpCode::new(0x00, "BRK", 1, 7, AddressingMode::NoneAddressing),
 
@@ -101,7 +101,7 @@ lazy_static! {
 
         //CLV (Clear Overflow Flag)
         OpCode::new(0xB8, "CLV", 1, 2, AddressingMode::NoneAddressing),
-        
+
         // CMP (Compare)
         OpCode::new(0xC9, "CMP", 2, 2, AddressingMode::Immediate),
         OpCode::new(0xC5, "CMP", 2, 3, AddressingMode::ZeroPage),
@@ -116,13 +116,13 @@ lazy_static! {
         OpCode::new(0xE0, "CPX", 2, 2, AddressingMode::Immediate),
         OpCode::new(0xE4, "CPX", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0xEC, "CPX", 3, 4, AddressingMode::Absolute),
-        
+
         // CPY (Compare with Y Register)
         OpCode::new(0xC0, "CPY", 2, 2, AddressingMode::Immediate),
         OpCode::new(0xC4, "CPY", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0xCC, "CPY", 3, 4, AddressingMode::Absolute),
 
-        // DEC (Decrement Memory) 
+        // DEC (Decrement Memory)
         OpCode::new(0xC6, "DEC", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0xD6, "DEC", 2, 3, AddressingMode::ZeroPage_X),
         OpCode::new(0xCE, "DEC", 3, 4, AddressingMode::Absolute),
@@ -164,7 +164,7 @@ lazy_static! {
 
         // JSR (Jump to Subroutine)
         OpCode::new(0x20, "JSR", 3, 6, AddressingMode::Absolute),
-        
+
         // LDA (Load to A Register)
         OpCode::new(0xa9, "LDA", 2, 2, AddressingMode::Immediate),
         OpCode::new(0xa5, "LDA", 2, 3, AddressingMode::ZeroPage),
@@ -181,7 +181,7 @@ lazy_static! {
         OpCode::new(0xB6, "LDX", 2, 4, AddressingMode::ZeroPage_Y),
         OpCode::new(0xAE, "LDX", 3, 4, AddressingMode::Absolute),
         OpCode::new(0xBE, "LDX", 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_Y),
-         
+
         // LDY (Load to Y Register)
         OpCode::new(0xA0, "LDY", 2, 2, AddressingMode::Immediate),
         OpCode::new(0xA4, "LDY", 2, 3, AddressingMode::ZeroPage),
@@ -213,11 +213,11 @@ lazy_static! {
 
         // PHA (Push Accumulator)
         OpCode::new(0x48, "PHA", 1, 3, AddressingMode::NoneAddressing),
-          
+
         // PHP (Push Processor Status)
         OpCode::new(0x08, "PHP", 1, 3, AddressingMode::NoneAddressing),
 
-        
+
         // PLA (Pull Accumulator)
         OpCode::new(0x68, "PLA", 1, 4, AddressingMode::NoneAddressing),
 
@@ -248,9 +248,19 @@ lazy_static! {
         // RTS (Return from Subroutine)
         OpCode::new(0x60, "RTS", 1, 6, AddressingMode::NoneAddressing),
 
+        // SBC (Subtract with Carry)
+        OpCode::new(0xE9, "SBC", 2, 2, AddressingMode::Immediate),
+        OpCode::new(0xE5, "SBC", 2, 3, AddressingMode::ZeroPage),
+        OpCode::new(0xF5, "SBC", 2, 4, AddressingMode::ZeroPage_X),
+        OpCode::new(0xED, "SBC", 3, 4, AddressingMode::Absolute),
+        OpCode::new(0xFD, "SBC", 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_X),
+        OpCode::new(0xF9, "SBC", 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_Y),
+        OpCode::new(0xE1, "SBC", 2, 6, AddressingMode::Indirect_X),
+        OpCode::new(0xF1, "SBC", 2, 5/*+1 if page crossed*/, AddressingMode::Indirect_Y),
+
         // SEC (Set Carry Flag)
         OpCode::new(0x38, "SEC", 1, 2, AddressingMode::NoneAddressing),
-       
+
          // STA
         OpCode::new(0x85, "STA", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0x95, "STA", 2, 4, AddressingMode::ZeroPage_X),
@@ -262,7 +272,7 @@ lazy_static! {
 
         // TAX
         OpCode::new(0xaa, "TAX", 1, 2, AddressingMode::NoneAddressing),
-        
+
         // TAY
         OpCode::new(0xA8, "TAY", 1, 2, AddressingMode::NoneAddressing),
 

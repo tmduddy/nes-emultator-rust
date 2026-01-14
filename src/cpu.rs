@@ -394,6 +394,7 @@ PC:\t0x{:X}",
                 "ROR" => self.ror(&opcode.addressing_mode),
                 "RTI" => self.rti(),
                 "RTS" => self.rts(),
+                "SBC" => self.sbc(&opcode.addressing_mode),
                 "SEC" => self.sec(),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
@@ -774,7 +775,7 @@ PC:\t0x{:X}",
         // Update the 7th bit of the rolled_val based on the original value of the carry flag.
         if self.status.carry {
             rolled_val |= 0b1000_0000;
-        } else { 
+        } else {
             let mask: u8 = !(1 << 7);
             rolled_val &= mask;
         }
@@ -798,6 +799,34 @@ PC:\t0x{:X}",
     fn rts(&mut self) {
         self.print_command("RTS");
         self.program_counter = self.read_from_stack_u16() + 1;
+    }
+
+    /// `SBC` Subtracts a value from memory from the A register, stores in the A register.
+    fn sbc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        // If the carry flag is already set we need to add 1 to the value
+        let carry_component = 1
+            - (match self.status.carry {
+                true => 1,
+                false => 0,
+            });
+        self.print_command_with_args("SBC", addr, value);
+
+        let result = self
+            .register_a
+            .wrapping_sub(value)
+            .wrapping_sub(carry_component);
+
+        self.set_carry_flag(result > 0xFF);
+        self.update_zero_and_negative_flags(result);
+        // check for sign bit correctness
+        if (value ^ result) & (result ^ self.register_a) & 0x80 != 0 {
+            self.status.overflow = true;
+        } else {
+            self.status.overflow = false;
+        }
+        self.register_a = result;
     }
 
     /// `SEC` sets the carry flag to 1.
@@ -1631,7 +1660,7 @@ mod test {
             "carry status should recieve the 1 from the 7th bit, pre shift"
         )
     }
-    
+
     #[test]
     fn test_rol_a_rolls_left_reads_initial_carry() {
         let mut cpu = CPU::new();
@@ -1657,13 +1686,14 @@ mod test {
         let mut cpu = CPU::new();
         // LDA 0b1010_0101
         // STA 0x10
-        // ROL 0x10 
+        // ROL 0x10
         // BRK
         let program = vec![0xA9, 0b1010_0101, 0x85, 0x10, 0x2E, 0x10, 0x00];
         cpu.load_and_run(program);
 
         assert_eq!(
-            cpu.mem_read(0x10), 0b0100_1010,
+            cpu.mem_read(0x10),
+            0b0100_1010,
             "memory value should be bit shifted one left"
         );
         assert_eq!(
@@ -1671,7 +1701,7 @@ mod test {
             "carry status should recieve the 1 from the 7th bit, pre shift"
         )
     }
-    
+
     #[test]
     fn test_ror_a_rolls_right() {
         let mut cpu = CPU::new();
@@ -1692,7 +1722,7 @@ mod test {
             "carry status should recieve the 1 from the 0th bit, pre shift"
         )
     }
-    
+
     #[test]
     fn test_ror_a_rolls_right_and_reads_from_carry() {
         let mut cpu = CPU::new();
@@ -1720,18 +1750,111 @@ mod test {
         let mut cpu = CPU::new();
         // LDA 0b1010_0101
         // STA 0x10
-        // ROR 0x10 
+        // ROR 0x10
         // BRK
         let program = vec![0xA9, 0b1010_0101, 0x85, 0x10, 0x66, 0x10, 0x00];
         cpu.load_and_run(program);
 
         assert_eq!(
-            cpu.mem_read(0x10), 0b0101_0010,
+            cpu.mem_read(0x10),
+            0b0101_0010,
             "memory value should be bit shifted one right"
         );
         assert_eq!(
             cpu.status.carry, true,
             "carry status should recieve the 1 from the 0th bit, pre shift"
         )
+    }
+
+    #[test]
+    fn test_sbc_subs_data_immediate_with_carry_set() {
+        let mut cpu = CPU::new();
+        // SEC
+        // LDA #$05
+        // SUB #$04
+        // BRK
+        let program = vec![0x38, 0xA9, 0x05, 0xE9, 0x04, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 0x01,
+            "The A register should hold the difference between the given value and A"
+        );
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn test_sbc_subs_data_immediate_with_carry_set_supports_negative() {
+        let mut cpu = CPU::new();
+        // SEC
+        // LDA #$04
+        // SUB #$05
+        // BRK
+        let program = vec![0x38, 0xA9, 0x04, 0xE9, 0x05, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 0xFF,
+            "The A register should hold the difference between the given value and A"
+        );
+        assert!(cpu.status.negative, "The negative flag should be set for results < 0");
+    }
+
+    #[test]
+    fn test_sbc_subs_data_immediate_without_carry_set() {
+        let mut cpu = CPU::new();
+        // LDA #$06
+        // SUB #$04
+        // BRK
+        let program = vec![0xA9, 0x06, 0xE9, 0x04, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 0x01,
+            "The A register should hold the difference between a given value and A and 1 (for the empty carry set"
+        );
+        assert!(!cpu.status.negative);
+    }
+
+    #[test] //todo
+    fn test_sbc_immediate_handles_zero() {
+        let mut cpu = CPU::new();
+        // SEC
+        // LDA #$05
+        // SUB #$05
+        // BRK
+        let program = vec![0x38, 0xA9, 0x05, 0xE9, 0x05, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 0x00,
+            "The A register should hold the difference between the given value and A"
+        );
+        assert!(!cpu.status.negative);
+        assert!(cpu.status.zero);
+    }
+
+    #[test] // todo
+    fn test_sbc_adds_data_from_memory() {
+        let mut cpu = CPU::new();
+        // SEC
+        // LDA #$04
+        // STA $10
+        // LDA #$05
+        // SUB $10
+        // BRK
+        let program = vec![0x38, 0xA9, 0x04, 0x85, 0x10, 0xA9, 0x05, 0xE5, 0x10, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 0x01,
+            "The A register should hold the difference between the value at the addr and A"
+        );
+        assert!(!cpu.status.negative);
     }
 }
