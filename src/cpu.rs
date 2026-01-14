@@ -70,8 +70,26 @@ impl Status {
         bin_rep.join("")
     }
 
-    pub fn to_binary(&self) -> u16 {
-        u16::from_str_radix(&self.to_binary_string(), 2).expect("couldn't parse Status to binary")
+    pub fn to_binary(&self) -> u8 {
+        u8::from_str_radix(&self.to_binary_string(), 2).expect("couldn't parse Status to binary")
+    }
+
+    /// Takes a u8 integer and uses it to set the status flags bit by bit.
+    pub fn from_binary(&mut self, new_flags: u8) {
+        let binary_rep = format!("{:b}", new_flags);
+        for (i, bit) in binary_rep.chars().map(|c| c.to_string()).enumerate() {
+            match i {
+                0 => self.negative = bit == "1",
+                1 => self.overflow = bit == "1",
+                2 => self.no_op = bit == "1",
+                3 => self.break_cmd = bit == "1",
+                4 => self.decimal = bit == "1",
+                5 => self.interrupt_disable = bit == "1",
+                6 => self.zero = bit == "1",
+                7 => self.carry = bit == "1",
+                _ => panic!("how did you get here"),
+            }
+        }
     }
 }
 
@@ -366,6 +384,10 @@ PC:\t0x{:X}",
                 "LSR" => self.lsr(&opcode.addressing_mode),
                 "NOP" => self.nop(),
                 "ORA" => self.ora(&opcode.addressing_mode),
+                "PHA" => self.pha(),
+                "PHP" => self.php(),
+                "PLA" => self.pla(),
+                "PLP" => self.plp(),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "TAY" => self.tay(),
@@ -631,7 +653,7 @@ PC:\t0x{:X}",
     }
 
     /// `ORA` does a logical OR (inclusive) between the A register and a byte from memory.
-    fn ora(&mut self, mode:&AddressingMode) {
+    fn ora(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
         self.print_command_with_args("LSR", addr, value);
@@ -640,6 +662,31 @@ PC:\t0x{:X}",
         self.update_zero_and_negative_flags(self.register_a);
     }
 
+    /// `PHA` pushes the current value of the A register to the stack
+    fn pha(&mut self) {
+        self.print_command("PHA");
+        self.write_to_stack(self.register_a);
+    }
+
+    /// `PHP` pushes the current value of the status flags to the stack
+    fn php(&mut self) {
+        self.print_command("PHP");
+        self.write_to_stack(self.status.to_binary());
+    }
+
+    /// `PLA` pulls the current value of the stack at the stack pointer to the A register.
+    fn pla(&mut self) {
+        self.print_command("PLA");
+        self.register_a = self.read_from_stack();
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    /// `PLP` pulls the current value of the stack and uses it to set the status flags.
+    fn plp(&mut self) {
+        self.print_command("PLP");
+        let new_flags = self.read_from_stack();
+        self.status.from_binary(new_flags);
+    }
 
     /// `STA`. Copies a value from the A register into memory.
     fn sta(&mut self, mode: &AddressingMode) {
@@ -1372,4 +1419,79 @@ mod test {
         assert_eq!(cpu.register_a, 0b0000, "A should OR to 0s");
         assert!(cpu.status.zero, "Zero flag should be set");
     }
+
+    #[test]
+    fn test_pha_pushes_a_to_stack() {
+        let mut cpu = CPU::new();
+        // LDA 0b1111_1111
+        // PHA
+        // BRK
+        let program = vec![0xA9, 0b1111_1111, 0x48, 0x00];
+
+        cpu.load_and_run(program);
+
+        let stack_val = cpu.read_from_stack();
+
+        assert_eq!(
+            stack_val, 0b1111_1111,
+            "the value of the stack should be loaded from the A register"
+        );
+    }
+
+    #[test]
+    fn test_php_pushes_flags_to_stack() {
+        let mut cpu = CPU::new();
+        // PHP
+        // BRK
+        let program = vec![0x08, 0x00];
+
+        cpu.load(program);
+        cpu.status.from_binary(0b1111_1111);
+        cpu.program_counter = 0x8000;
+        cpu.run();
+
+        let stack_val = cpu.read_from_stack();
+
+        assert_eq!(
+            stack_val, 0b1111_1111,
+            "the value of the stack should be loaded from the status flags"
+        );
+    }
+
+    #[test]
+    fn test_pla_loads_a_from_stack() {
+        let mut cpu = CPU::new();
+        // PLA
+        // BRK
+        let program = vec![0x68, 0x00];
+
+        cpu.load(program);
+        cpu.write_to_stack(0b1111_1111);
+        cpu.program_counter = 0x8000;
+        cpu.run();
+
+        assert_eq!(
+            cpu.register_a, 0b1111_1111,
+            "the value of the a register should be loaded from the stack"
+        );
+    }
+
+    #[test]
+    fn test_plp_loads_flags_from_stack() {
+        let mut cpu = CPU::new();
+        // PLP
+        // BRK
+        let program = vec![0x28, 0x00];
+
+        cpu.load(program);
+        cpu.write_to_stack(0b1111_1111);
+        cpu.program_counter = 0x8000;
+        cpu.run();
+
+        assert_eq!(
+            cpu.status.to_binary(), 0b1111_1111,
+            "the value of the a register should be loaded from the stack"
+        );
+    }
+
 }

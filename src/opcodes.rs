@@ -210,8 +210,21 @@ lazy_static! {
         OpCode::new(0x19, "ORA", 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_Y),
         OpCode::new(0x01, "ORA", 2, 6, AddressingMode::Indirect_X),
         OpCode::new(0x11, "ORA", 2, 5/*+1 if page crossed*/, AddressingMode::Indirect_Y),
+
+        // PHA (Push Accumulator)
+        OpCode::new(0x48, "PHA", 1, 3, AddressingMode::NoneAddressing),
           
-        // STA
+        // PHP (Push Processor Status)
+        OpCode::new(0x08, "PHP", 1, 3, AddressingMode::NoneAddressing),
+
+        
+        // PLA (Pull Accumulator)
+        OpCode::new(0x68, "PLA", 1, 4, AddressingMode::NoneAddressing),
+
+        // PLP (Pull Processor Status)
+        OpCode::new(0x28, "PLP", 1, 4, AddressingMode::NoneAddressing),
+       
+         // STA
         OpCode::new(0x85, "STA", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0x95, "STA", 2, 4, AddressingMode::ZeroPage_X),
         OpCode::new(0x8d, "STA", 3, 4, AddressingMode::Absolute),
