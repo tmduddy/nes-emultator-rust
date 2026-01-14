@@ -403,6 +403,10 @@ PC:\t0x{:X}",
                 "STY" => self.sty(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "TAY" => self.tay(),
+                "TSX" => self.tsx(),
+                "TXA" => self.txa(),
+                "TXS" => self.txs(),
+                "TYA" => self.tya(),
                 _ => {
                     panic!("bad opcode found somehow")
                 }
@@ -851,7 +855,7 @@ PC:\t0x{:X}",
         self.status.interrupt_disable = true;
     }
 
-    /// `STA`. Copies a value from the A register into memory.
+    /// `STA` copies a value from the A register into memory.
     fn sta(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         self.print_command_with_args("STA", addr, 0);
@@ -859,7 +863,7 @@ PC:\t0x{:X}",
         self.mem_write(addr, self.register_a);
     }
 
-    /// `STX`. Copies a value from the X register into memory.
+    /// `STX` copies a value from the X register into memory.
     fn stx(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         self.print_command_with_args("STX", addr, 0);
@@ -867,7 +871,7 @@ PC:\t0x{:X}",
         self.mem_write(addr, self.register_x);
     }
 
-    /// `STY`. Copies a value from the Y register into memory.
+    /// `STY` copies a value from the Y register into memory.
     fn sty(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         self.print_command_with_args("STY", addr, 0);
@@ -875,18 +879,46 @@ PC:\t0x{:X}",
         self.mem_write(addr, self.register_y);
     }
 
-    /// 0xAA Opcode `TAX`. Copies a value from register A to register X.
+    /// Opcode `TAX` copies a value from register A to register X.
     fn tax(&mut self) {
         self.print_command("TAX");
         self.register_x = self.register_a;
         self.update_zero_and_negative_flags(self.register_x);
     }
 
-    /// 0xA8 Opcode `TAY`. Copies a value from register A to register Y.
+    /// Opcode `TAY` copies a value from register A to register Y.
     fn tay(&mut self) {
         self.print_command("TAY");
         self.register_y = self.register_a;
         self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    /// `TSX` copies the stack contents into register X
+    fn tsx(&mut self) {
+        self.print_command("TSX");
+        let stack_contents = self.read_from_stack();
+        self.register_x = stack_contents;
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    /// `TXA` copies the contents of the X register into the A register
+    fn txa(&mut self) {
+        self.print_command("TXA");
+        self.register_a = self.register_x;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    /// `TXS` copies the contents fo the X register into the Stack
+    fn txs(&mut self) {
+        self.print_command("TXS");
+        self.write_to_stack(self.register_x);
+    }
+
+    /// `TYA` copies the contents of the Y register into the A register
+    fn tya(&mut self) {
+        self.print_command("TYA");
+        self.register_a = self.register_y;
+        self.update_zero_and_negative_flags(self.register_a);
     }
 
     /// Used by all of the branching logic instructions to jump the PC by a given offset

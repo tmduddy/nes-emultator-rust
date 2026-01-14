@@ -266,7 +266,7 @@ lazy_static! {
 
         // SEI (Set Interrupt Disable)
         OpCode::new(0x78, "SEI", 1, 2, AddressingMode::NoneAddressing),
-        
+
         // STA (Store Accumulator)
         OpCode::new(0x85, "STA", 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0x95, "STA", 2, 4, AddressingMode::ZeroPage_X),
@@ -286,12 +286,23 @@ lazy_static! {
         OpCode::new(0x94, "STY", 2, 4, AddressingMode::ZeroPage_X),
         OpCode::new(0x8C, "STY", 3, 4, AddressingMode::Absolute),
 
-        // TAX
-        OpCode::new(0xaa, "TAX", 1, 2, AddressingMode::NoneAddressing),
+        // TAX (Transfer Accumulator to X)
+        OpCode::new(0xAA, "TAX", 1, 2, AddressingMode::NoneAddressing),
 
-        // TAY
+        // TAY (Transfer Accumulator to Y)
         OpCode::new(0xA8, "TAY", 1, 2, AddressingMode::NoneAddressing),
 
+        // TSX (Transfer Stack Pointer to X)
+        OpCode::new(0xBA, "TSX", 1, 2, AddressingMode::NoneAddressing),
+
+        // TXA (Transfer X to Accumulator)
+        OpCode::new(0x8A, "TXA", 1, 2, AddressingMode::NoneAddressing),
+
+        // TXS (Transfer X to Stack)
+        OpCode::new(0x9A, "TXS", 1, 2, AddressingMode::NoneAddressing),
+
+        // TYA (Transfer Y to Accumulator)
+        OpCode::new(0x98, "TYA", 1, 2, AddressingMode::NoneAddressing),
     ];
     pub static ref OPCODES_MAP: HashMap<u8, &'static OpCode> = {
         let mut map = HashMap::new();
