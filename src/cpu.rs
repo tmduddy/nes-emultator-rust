@@ -392,6 +392,8 @@ PC:\t0x{:X}",
                 "ROL" => self.rol(&opcode.addressing_mode),
                 "ROR_A" => self.ror_a(),
                 "ROR" => self.ror(&opcode.addressing_mode),
+                "RTI" => self.rti(),
+                "RTS" => self.rts(),
                 "SEC" => self.sec(),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
@@ -780,6 +782,22 @@ PC:\t0x{:X}",
         self.set_carry_flag(new_carry);
         self.mem_write(addr, rolled_val);
         self.update_zero_and_negative_flags(rolled_val);
+    }
+
+    /// `RTI` returns at the end of an interrupt routine, pulling the status flags from the stack
+    /// then the PC.
+    fn rti(&mut self) {
+        self.print_command("RTI");
+        let new_flags = self.read_from_stack();
+        self.status.from_binary(new_flags);
+        self.program_counter = self.read_from_stack_u16();
+    }
+
+    /// `RTS` returns to the calling routine at the end of a subroutine and pulls the PC - 1 from
+    /// the stack.
+    fn rts(&mut self) {
+        self.print_command("RTS");
+        self.program_counter = self.read_from_stack_u16() + 1;
     }
 
     /// `SEC` sets the carry flag to 1.

@@ -242,6 +242,12 @@ lazy_static! {
         OpCode::new(0x6E, "ROR", 3, 6, AddressingMode::Absolute),
         OpCode::new(0x7E, "ROR", 3, 7, AddressingMode::Absolute_X),
 
+        // RTI (Return from Interrupt)
+        OpCode::new(0x40, "RTI", 1, 6, AddressingMode::NoneAddressing),
+
+        // RTS (Return from Subroutine)
+        OpCode::new(0x60, "RTS", 1, 6, AddressingMode::NoneAddressing),
+
         // SEC (Set Carry Flag)
         OpCode::new(0x38, "SEC", 1, 2, AddressingMode::NoneAddressing),
        
