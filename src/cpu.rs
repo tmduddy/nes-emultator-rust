@@ -399,6 +399,8 @@ PC:\t0x{:X}",
                 "SED" => self.sed(),
                 "SEI" => self.sei(),
                 "STA" => self.sta(&opcode.addressing_mode),
+                "STX" => self.stx(&opcode.addressing_mode),
+                "STY" => self.sty(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "TAY" => self.tay(),
                 _ => {
@@ -836,13 +838,13 @@ PC:\t0x{:X}",
         self.print_command("SEC");
         self.status.carry = true;
     }
-   
+
     /// `SED` sets the Decimal Mode flag to 1.
     fn sed(&mut self) {
         self.print_command("SED");
         self.status.decimal = true;
     }
-    
+
     /// `SEI` sets the Interrupt Disable flag to 1.
     fn sei(&mut self) {
         self.print_command("SEI");
@@ -855,6 +857,22 @@ PC:\t0x{:X}",
         self.print_command_with_args("STA", addr, 0);
 
         self.mem_write(addr, self.register_a);
+    }
+
+    /// `STX`. Copies a value from the X register into memory.
+    fn stx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.print_command_with_args("STX", addr, 0);
+
+        self.mem_write(addr, self.register_x);
+    }
+
+    /// `STY`. Copies a value from the Y register into memory.
+    fn sty(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.print_command_with_args("STY", addr, 0);
+
+        self.mem_write(addr, self.register_y);
     }
 
     /// 0xAA Opcode `TAX`. Copies a value from register A to register X.
@@ -1767,7 +1785,10 @@ mod test {
             cpu.register_a, 0xFF,
             "The A register should hold the difference between the given value and A"
         );
-        assert!(cpu.status.negative, "The negative flag should be set for results < 0");
+        assert!(
+            cpu.status.negative,
+            "The negative flag should be set for results < 0"
+        );
     }
 
     #[test]
@@ -1848,7 +1869,7 @@ mod test {
 
         assert!(!cpu.status.carry);
     }
-    
+
     #[test]
     fn test_sed_sets_decimal() {
         let mut cpu = CPU::new();
@@ -1893,5 +1914,33 @@ mod test {
         cpu.load_and_run(program);
 
         assert!(!cpu.status.interrupt_disable);
+    }
+
+    #[test]
+    fn test_stx_loads_data() {
+        let mut cpu = CPU::new();
+        // LDA 0xFF
+        // TAX
+        // STX 0x10
+        // BRK
+        let program = vec![0xA9, 0xFF, 0xAA, 0x86, 0x10, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.mem_read(0x10), 0xFF);
+    }
+
+    #[test]
+    fn test_sty_loads_data() {
+        let mut cpu = CPU::new();
+        // LDA 0xFF
+        // TAY
+        // STY 0x10
+        // BRK
+        let program = vec![0xA9, 0xFF, 0xA8, 0x84, 0x10, 0x00];
+
+        cpu.load_and_run(program);
+
+        assert_eq!(cpu.mem_read(0x10), 0xFF);
     }
 }
