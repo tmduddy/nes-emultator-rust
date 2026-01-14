@@ -223,6 +223,27 @@ lazy_static! {
 
         // PLP (Pull Processor Status)
         OpCode::new(0x28, "PLP", 1, 4, AddressingMode::NoneAddressing),
+
+        //ROL_A (Rotate Left using A Register)
+        OpCode::new(0x2A, "ROL_A", 1, 2, AddressingMode::NoneAddressing),
+
+        // ROL (Rotate Left)
+        OpCode::new(0x26, "ROL", 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0x36, "ROL", 2, 6, AddressingMode::ZeroPage_X),
+        OpCode::new(0x2E, "ROL", 3, 6, AddressingMode::Absolute),
+        OpCode::new(0x3E, "ROL", 3, 7, AddressingMode::Absolute_X),
+
+        //ROR_A (Rotate Right using A Register)
+        OpCode::new(0x6A, "ROR_A", 1, 2, AddressingMode::NoneAddressing),
+
+        // ROR (Rotate Right)
+        OpCode::new(0x66, "ROR", 2, 5, AddressingMode::ZeroPage),
+        OpCode::new(0x76, "ROR", 2, 6, AddressingMode::ZeroPage_X),
+        OpCode::new(0x6E, "ROR", 3, 6, AddressingMode::Absolute),
+        OpCode::new(0x7E, "ROR", 3, 7, AddressingMode::Absolute_X),
+
+        // SEC (Set Carry Flag)
+        OpCode::new(0x38, "SEC", 1, 2, AddressingMode::NoneAddressing),
        
          // STA
         OpCode::new(0x85, "STA", 2, 3, AddressingMode::ZeroPage),

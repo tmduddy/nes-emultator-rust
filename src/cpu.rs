@@ -231,7 +231,7 @@ PC:\t0x{:X}",
 
     fn print_command_with_args(&self, cmd: &str, addr: u16, value: u8) {
         println!(
-            "{} ${:X} (0x{:X} = 0b{:b} = {})",
+            "{} ${:X} ({:#X} = {:#010b} = {})",
             cmd, addr, value, value, value
         );
     }
@@ -388,6 +388,11 @@ PC:\t0x{:X}",
                 "PHP" => self.php(),
                 "PLA" => self.pla(),
                 "PLP" => self.plp(),
+                "ROL_A" => self.rol_a(),
+                "ROL" => self.rol(&opcode.addressing_mode),
+                "ROR_A" => self.ror_a(),
+                "ROR" => self.ror(&opcode.addressing_mode),
+                "SEC" => self.sec(),
                 "STA" => self.sta(&opcode.addressing_mode),
                 "TAX" => self.tax(),
                 "TAY" => self.tay(),
@@ -686,6 +691,101 @@ PC:\t0x{:X}",
         self.print_command("PLP");
         let new_flags = self.read_from_stack();
         self.status.from_binary(new_flags);
+    }
+
+    /// `ROL_A` rotates all of the bits in the accumulator one to the left, using the carry flag
+    /// to handle the edges.
+    fn rol_a(&mut self) {
+        self.print_command("ROL A");
+        // Store the 7th bit of the current value for use in the carry flag.
+        let new_carry = (self.register_a >> 7) & 1 == 1;
+        let mut rolled_val = self.register_a;
+        rolled_val <<= 1;
+        // Update the 0th bit of the rolled_val based on the original value of the carry flag.
+        if self.status.carry {
+            rolled_val |= 1;
+        } else {
+            rolled_val &= !1;
+        }
+
+        self.set_carry_flag(new_carry);
+        self.register_a = rolled_val;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    /// `ROL` rotates all of the bits at a memory address one to the left, using the carry flag
+    /// to handle the edges.
+    fn rol(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        self.print_command_with_args("ROL", addr, value);
+
+        let new_carry = (value >> 7) & 1 == 1;
+        let mut rolled_val = value;
+        rolled_val <<= 1;
+        // Update the 0th bit of the rolled_val based on the original value of the carry flag.
+        if self.status.carry {
+            rolled_val |= 1;
+        } else {
+            rolled_val &= !1;
+        }
+
+        self.set_carry_flag(new_carry);
+        self.mem_write(addr, rolled_val);
+        self.update_zero_and_negative_flags(rolled_val);
+    }
+
+    /// `ROR_A` rotates all of the bits in the accumulator one to the right, using the carry flag
+    /// to handle the edges.
+    fn ror_a(&mut self) {
+        self.print_command("ROR A");
+
+        // store the 0th bit of the current value for use in the carry flag.
+        let new_carry = self.register_a & 1 == 1;
+        let mut rolled_val = self.register_a;
+        rolled_val >>= 1;
+        println!("rolled_val {:#010b}", rolled_val);
+        // Update the 7th bit of the rolled_val based on the original value of the carry flag.
+        if self.status.carry {
+            rolled_val |= 0b1000_0000;
+        } else {
+            let mask: u8 = !(1 << 7);
+            rolled_val &= mask;
+        }
+
+        self.set_carry_flag(new_carry);
+        self.register_a = rolled_val;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    /// `ROR` rotates all of the bits at a memory address one to the right, using the carry flag
+    /// to handle the edges.
+    fn ror(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        self.print_command_with_args("ROR", addr, value);
+
+        // store the 0th bit of the current value for use in the carry flag.
+        let new_carry = value & 1 == 1;
+        let mut rolled_val = value;
+        rolled_val >>= 1;
+        // Update the 7th bit of the rolled_val based on the original value of the carry flag.
+        if self.status.carry {
+            rolled_val |= 0b1000_0000;
+        } else { 
+            let mask: u8 = !(1 << 7);
+            rolled_val &= mask;
+        }
+
+        self.set_carry_flag(new_carry);
+        self.mem_write(addr, rolled_val);
+        self.update_zero_and_negative_flags(rolled_val);
+    }
+
+    /// `SEC` sets the carry flag to 1.
+    fn sec(&mut self) {
+        self.print_command("SEC");
+        self.status.carry = true;
     }
 
     /// `STA`. Copies a value from the A register into memory.
@@ -1489,9 +1589,131 @@ mod test {
         cpu.run();
 
         assert_eq!(
-            cpu.status.to_binary(), 0b1111_1111,
+            cpu.status.to_binary(),
+            0b1111_1111,
             "the value of the a register should be loaded from the stack"
         );
     }
 
+    #[test]
+    fn test_rol_a_rolls_left() {
+        let mut cpu = CPU::new();
+        // LDA 0b1010_0101
+        // ROL A
+        // BRK
+        let program = vec![0xA9, 0b1010_0101, 0x2A, 0x00];
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 0b0100_1010,
+            "A register should be bit shifted one left"
+        );
+        assert_eq!(
+            cpu.status.carry, true,
+            "carry status should recieve the 1 from the 7th bit, pre shift"
+        )
+    }
+    
+    #[test]
+    fn test_rol_a_rolls_left_reads_initial_carry() {
+        let mut cpu = CPU::new();
+        // LDA 0b0010_0101
+        // SEC
+        // ROL A
+        // BRK
+        let program = vec![0xA9, 0b0010_0101, 0x38, 0x2A, 0x00];
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.register_a, 0b0100_1011,
+            "A register should be bit shifted one left, and read the LSB from carry"
+        );
+        assert_eq!(
+            cpu.status.carry, false,
+            "carry status should recieve the 1 from the 7th bit, pre shift"
+        )
+    }
+
+    #[test]
+    fn test_rol_rolls_left_from_memory() {
+        let mut cpu = CPU::new();
+        // LDA 0b1010_0101
+        // STA 0x10
+        // ROL 0x10 
+        // BRK
+        let program = vec![0xA9, 0b1010_0101, 0x85, 0x10, 0x2E, 0x10, 0x00];
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.mem_read(0x10), 0b0100_1010,
+            "memory value should be bit shifted one left"
+        );
+        assert_eq!(
+            cpu.status.carry, true,
+            "carry status should recieve the 1 from the 7th bit, pre shift"
+        )
+    }
+    
+    #[test]
+    fn test_ror_a_rolls_right() {
+        let mut cpu = CPU::new();
+        // LDA 0b1010_0101
+        // ROR A
+        // BRK
+        let program = vec![0xA9, 0b1010_0101, 0x6A, 0x00];
+        cpu.load_and_run(program);
+
+        println!("A: {:#010b}", cpu.register_a);
+
+        assert_eq!(
+            cpu.register_a, 0b0101_0010,
+            "A register should be bit shifted one right"
+        );
+        assert_eq!(
+            cpu.status.carry, true,
+            "carry status should recieve the 1 from the 0th bit, pre shift"
+        )
+    }
+    
+    #[test]
+    fn test_ror_a_rolls_right_and_reads_from_carry() {
+        let mut cpu = CPU::new();
+        // LDA 0b1010_0100
+        // SEC
+        // ROR A
+        // BRK
+        let program = vec![0xA9, 0b1010_0100, 0x38, 0x6A, 0x00];
+        cpu.load_and_run(program);
+
+        println!("A: {:#010b}", cpu.register_a);
+
+        assert_eq!(
+            cpu.register_a, 0b1101_0010,
+            "A register should be bit shifted one right"
+        );
+        assert_eq!(
+            cpu.status.carry, false,
+            "carry status should recieve the 0 from the 0th bit, pre shift"
+        )
+    }
+
+    #[test]
+    fn test_ror_rolls_right_from_memory() {
+        let mut cpu = CPU::new();
+        // LDA 0b1010_0101
+        // STA 0x10
+        // ROR 0x10 
+        // BRK
+        let program = vec![0xA9, 0b1010_0101, 0x85, 0x10, 0x66, 0x10, 0x00];
+        cpu.load_and_run(program);
+
+        assert_eq!(
+            cpu.mem_read(0x10), 0b0101_0010,
+            "memory value should be bit shifted one right"
+        );
+        assert_eq!(
+            cpu.status.carry, true,
+            "carry status should recieve the 1 from the 0th bit, pre shift"
+        )
+    }
 }
