@@ -16,12 +16,12 @@ pub enum AddressingMode {
     NoneAddressing,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Status {
     pub negative: bool,
     pub overflow: bool,
     /// Not used in this instruction set. In reality this is pinned high (1) but for our purposes
-    /// it's easier to leave it permenantly false to maintain consistency with the other flags.
+    /// it's easier to leave it permanently false to maintain consistency with the other flags.
     pub no_op: bool,
     pub break_cmd: bool,
     /// Not used for the NES specific instruction set.
@@ -93,6 +93,13 @@ impl Status {
     }
 }
 
+// Note: The tutorial shows this approach, using the STACK_ADDR + cpu.stack_pointer to point at stack data rather than
+// an explicit stack address. I'm wondering if this is a u8 solution thing.
+const STACK_ADDR: u16 = 0x0100;
+const STACK_RESET: u8 = 0xFD;
+
+const PRG_ROM_START: u16 = 0x0600;
+
 #[derive(Debug)]
 pub struct CPU {
     /// ## The Accumulator register (A)
@@ -118,7 +125,7 @@ pub struct CPU {
     /// Used to hold the address of the top of the stack (memory addresses [0x0100 .. 0x1FF]).
     /// When a byte gets pushed to the stack the SP value decrements, and vice versa when bytes
     /// are retrieved from the stack.
-    pub stack_pointer: u16,
+    pub stack_pointer: u8,
 
     /// ## Processor status (P)
     ///
@@ -156,7 +163,7 @@ pub struct CPU {
     memory: [u8; 0xFFFF],
 }
 
-trait Memory {
+pub trait Memory {
     fn mem_read(&self, addr: u16) -> u8;
     fn mem_write(&mut self, addr: u16, value: u8) -> ();
 
@@ -165,7 +172,7 @@ trait Memory {
     ///
     /// e.g. $12_34 -> 34_12
     fn mem_read_u16(&mut self, addr: u16) -> u16 {
-        // swap the positions of the most and least signficant 8 bits.
+        // swap the positions of the most and least significant 8 bits.
         let low = self.mem_read(addr) as u16;
         let high = self.mem_read(addr + 1) as u16;
         high << 8 | low
@@ -176,7 +183,7 @@ trait Memory {
     ///
     /// e.g. writing 34_12 will store $1234
     fn mem_write_u16(&mut self, addr: u16, data: u16) {
-        // swap the positions of the most and least signficant 8 bits.
+        // swap the positions of the most and least significant 8 bits.
         let high = (data >> 8) as u8;
         let low = (data & 0xff) as u8;
         self.mem_write(addr, low);
@@ -202,7 +209,7 @@ impl CPU {
             register_a: 0,
             register_x: 0,
             register_y: 0,
-            stack_pointer: 0x1FF,
+            stack_pointer: STACK_RESET,
             status: Status::new(),
             program_counter: 0,
             memory: [0; 0xFFFF],
@@ -212,26 +219,35 @@ impl CPU {
     pub fn debug_print(&self) {
         println!(
             "\
-A:\t0x{:X}
-X:\t0x{:X}
-Y:\t0x{:X}
-Status:\t0b{:b}
-PC:\t0x{:X}",
+\tA:\t{:#04X}
+\tX:\t{:#04X}
+\tY:\t{:#04X}
+\tStatus:\t{:#010b}
+\tPC:\t{:#06X}",
             self.register_a,
             self.register_x,
             self.register_y,
             self.status.to_binary(),
             self.program_counter
         );
+        println!("\tSTACK:");
+        for addr in self.stack_pointer..(STACK_RESET) {
+            let ptr = addr as u16 + STACK_ADDR;
+            println!("\t\t${:04X}\t{:#04X}", ptr, self.mem_read(ptr));
+        }
     }
 
     fn print_command(&self, cmd: &str) {
         println!("{}", cmd);
     }
 
+    fn print_command_with_addr(&self, cmd: &str, addr: u16) {
+        println!("{cmd} ${addr:04X}")
+    }
+
     fn print_command_with_args(&self, cmd: &str, addr: u16, value: u8) {
         println!(
-            "{} ${:X} ({:#X} = {:#010b} = {})",
+            "{} ${:04X} ({:#04X} = {:#010b} = {})",
             cmd, addr, value, value, value
         );
     }
@@ -269,11 +285,11 @@ PC:\t0x{:X}",
                 // Find the value pointed at by the PC
                 let base = self.mem_read(self.program_counter);
                 // Add the value in X to use as a ptr to the actual address
-                let ptr = base.wrapping_add(self.register_x) as u16;
+                let ptr = (base as u8).wrapping_add(self.register_x);
 
                 // Find the two bytes indicated by the ptr
-                let low = self.mem_read(ptr);
-                let high = self.mem_read(ptr.wrapping_add(1));
+                let low = self.mem_read(ptr as u16);
+                let high = self.mem_read(ptr.wrapping_add(1) as u16);
 
                 // Account for LE encoding and return those values as the new address
                 (high as u16) << 8 | (low as u16)
@@ -283,8 +299,8 @@ PC:\t0x{:X}",
                 let base = self.mem_read(self.program_counter) as u16;
 
                 // Find the two values pointed at by base
-                let low = self.mem_read(base);
-                let high = self.mem_read(base.wrapping_add(1));
+                let low = self.mem_read(base as u16);
+                let high = self.mem_read(base.wrapping_add(1) as u16);
 
                 // account for LE encoding
                 let deref_base = (high as u16) << 8 | (low as u16);
@@ -301,8 +317,11 @@ PC:\t0x{:X}",
     pub fn load(&mut self, program: Vec<u8>) {
         // Note that PRG ROM starts at 0x8000, all previous bytes are reserved for other
         // system functions.
-        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-        self.mem_write_u16(0xFFFC, 0x8000);
+        // self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
+        // self.mem_write_u16(0xFFFC, 0x8000);
+        // edited for SNAKE
+        self.memory[PRG_ROM_START as usize..(PRG_ROM_START as usize + program.len())].copy_from_slice(&program[..]);
+        self.mem_write_u16(0xFFFC, PRG_ROM_START);
     }
 
     /// Simulates the console's behavior when a new cartridge is inserted.
@@ -323,27 +342,34 @@ PC:\t0x{:X}",
         self.status = Status::new();
 
         self.program_counter = self.mem_read_u16(0xFFFC);
-        self.stack_pointer = 0x1FF;
+        self.stack_pointer = STACK_RESET;
+    }
+
+    pub fn run(&mut self) {
+        self.run_with_callback(|_| {});
     }
 
     /// Executes the program in PRG ROM.
-    pub fn run(&mut self) {
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut CPU),
+    {
         let ref opcodes: HashMap<u8, &'static opcodes::OpCode> = *opcodes::OPCODES_MAP;
 
         // Clock cycle loop
         loop {
             // Fetch the op code from the program at the counter.
             let code = self.mem_read(self.program_counter);
-            let opcode = opcodes
-                .get(&code)
-                .expect(&format!("couldn't find code 0x{:X} in opcodes map", code));
-
             // Increment to the next program step immediately after reading.
             self.program_counter += 1;
 
             // Track the current state of the PC to identify if it needs to be incremented after
             // the code is run.
             let pc_state = self.program_counter;
+
+            let opcode = opcodes
+                .get(&code)
+                .expect(&format!("couldn't find code 0x{:X} in opcodes map", code));
 
             match opcode.instruction {
                 "ADC" => self.adc(&opcode.addressing_mode),
@@ -357,13 +383,16 @@ PC:\t0x{:X}",
                 "BMI" => self.branch(self.status.negative),
                 "BNE" => self.branch(!self.status.zero),
                 "BPL" => self.branch(!self.status.negative),
-                "BRK" => return,
+                "BRK" => {
+                    self.print_command("BRK");
+                    return;
+                }
                 "BVC" => self.branch(!self.status.overflow),
                 "BVS" => self.branch(self.status.overflow),
-                "CLC" => self.set_carry_flag(false),
-                "CLD" => self.set_decimal_mode(false),
-                "CLI" => self.set_interrupt_disable(false),
-                "CLV" => self.set_overflow_flag(false),
+                "CLC" => self.clc(),
+                "CLD" => self.cld(),
+                "CLI" => self.cli(),
+                "CLV" => self.clv(),
                 "CMP" => self.compare(&opcode.addressing_mode, self.register_a),
                 "CPX" => self.compare(&opcode.addressing_mode, self.register_x),
                 "CPY" => self.compare(&opcode.addressing_mode, self.register_y),
@@ -414,23 +443,17 @@ PC:\t0x{:X}",
             if self.program_counter == pc_state {
                 self.program_counter += (opcode.byte_count - 1) as u16;
             }
+
+            callback(self);
         }
     }
 
     /// `ADC` Adds a value from memory to the A register, stores in the A register.
     fn adc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        let mut value = self.mem_read(addr);
-        // If the carry flag is already set we need to add 1 to the value
-        value = value.wrapping_add(match self.status.carry {
-            true => 1,
-            false => 0,
-        });
+        let value = self.mem_read(addr);
         self.print_command_with_args("ADC", addr, value);
-
-        self.set_carry_flag((value as u16) + (self.register_a as u16) > 0xFF);
-        self.update_zero_and_negative_flags(self.register_a);
-        self.register_a = self.register_a.wrapping_add(value);
+        self.add_to_register_a(value);
     }
 
     /// `AND` performs a bitwise AND between the A register and a memory value.
@@ -464,7 +487,7 @@ PC:\t0x{:X}",
         self.set_carry_flag(self.register_a >> 7 == 1);
 
         self.register_a = self.register_a << 1;
-        // in the tutorial, he skips setting the zero and negative flags. I'm not sure why
+        self.update_zero_and_negative_flags(self.register_a);
     }
 
     /// `BIT` performs an AND between a value in memory and the A register then sets some flags
@@ -477,19 +500,43 @@ PC:\t0x{:X}",
         let result = value & self.register_a;
 
         self.status.zero = result == 0;
-        self.status.overflow = value & 0b1000_0000 > 0;
-        self.status.negative = value & 0b0100_0000 > 0;
+        self.status.negative = value & 0b1000_0000 > 0;
+        self.status.overflow = value & 0b0100_0000 > 0;
     }
 
-    /// The "compare" family of instructios compares a register with a memory value and sets some
+    /// `CLC` clears the carry flag
+    fn clc(&mut self) {
+        self.print_command("CLC");
+        self.set_carry_flag(false);
+    }
+
+    /// `CLD` clears the decimal mode flag
+    fn cld(&mut self) {
+        self.print_command("CLD");
+        self.set_decimal_mode(false);
+    }
+
+    /// `CLI` clears the interrupt disable flag
+    fn cli(&mut self) {
+        self.print_command("CLI");
+        self.set_interrupt_disable(false);
+    }
+    
+    /// `CLV` clears the overflow flag
+    fn clv(&mut self) {
+        self.print_command("CLV");
+        self.set_overflow_flag(false);
+    }
+
+    /// The "compare" family of instructions compares a register with a memory value and sets some
     /// flags accordingly. The result is not kept.
     fn compare(&mut self, mode: &AddressingMode, target: u8) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
         self.print_command_with_args("CMP", addr, value);
 
-        self.set_carry_flag(target > value);
-        self.update_zero_and_negative_flags(target - value);
+        self.set_carry_flag(target >= value);
+        self.update_zero_and_negative_flags(target.wrapping_sub(value));
     }
 
     /// `DEC` decrements the value at a given memory address by 1 and sets some flags accordingly.
@@ -562,7 +609,7 @@ PC:\t0x{:X}",
     /// `JMP` jumps to a specific 16 bit memory address
     fn jmp(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        self.print_command_with_args("JMP", addr, 0);
+        self.print_command_with_addr("JMP", addr);
 
         self.program_counter = addr;
     }
@@ -594,15 +641,16 @@ PC:\t0x{:X}",
         } else {
             self.mem_read_u16(addr)
         };
-        self.print_command_with_args("JMP I", addr, 0);
+        self.print_command_with_addr("JMP I", addr);
 
         self.program_counter = indirect_ref;
     }
 
     /// `JSR` Pushes the return point onto the stack and then updates the PC to the target address.
     fn jsr(&mut self) {
-        self.print_command("JSR");
-        self.write_to_stack_u16(self.program_counter + 1);
+        let addr = self.program_counter + 1;
+        self.print_command_with_addr("JSR", addr);
+        self.write_to_stack_u16(addr);
         let target_addr = self.mem_read_u16(self.program_counter);
         self.program_counter = target_addr;
     }
@@ -687,7 +735,11 @@ PC:\t0x{:X}",
     /// `PHP` pushes the current value of the status flags to the stack
     fn php(&mut self) {
         self.print_command("PHP");
-        self.write_to_stack(self.status.to_binary());
+        let mut flags = self.status.clone();
+        flags.break_cmd = true;
+        flags.no_op = true;
+
+        self.write_to_stack(flags.to_binary());
     }
 
     /// `PLA` pulls the current value of the stack at the stack pointer to the A register.
@@ -702,6 +754,8 @@ PC:\t0x{:X}",
         self.print_command("PLP");
         let new_flags = self.read_from_stack();
         self.status.from_binary(new_flags);
+        self.status.break_cmd = false;
+        self.status.no_op = true;
     }
 
     /// `ROL_A` rotates all of the bits in the accumulator one to the left, using the carry flag
@@ -799,42 +853,25 @@ PC:\t0x{:X}",
         self.print_command("RTI");
         let new_flags = self.read_from_stack();
         self.status.from_binary(new_flags);
+        // This command does some extra work to explicitly set the otherwise-unused no_op or BREAK2 flag
+        self.status.break_cmd = false;
+        self.status.no_op = true;
         self.program_counter = self.read_from_stack_u16();
     }
 
     /// `RTS` returns to the calling routine at the end of a subroutine and pulls the PC - 1 from
     /// the stack.
     fn rts(&mut self) {
-        self.print_command("RTS");
         self.program_counter = self.read_from_stack_u16() + 1;
+        self.print_command_with_addr("RTS", self.program_counter);
     }
 
     /// `SBC` Subtracts a value from memory from the A register, stores in the A register.
     fn sbc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        // If the carry flag is already set we need to add 1 to the value
-        let carry_component = 1
-            - (match self.status.carry {
-                true => 1,
-                false => 0,
-            });
         self.print_command_with_args("SBC", addr, value);
-
-        let result = self
-            .register_a
-            .wrapping_sub(value)
-            .wrapping_sub(carry_component);
-
-        self.set_carry_flag(result > 0xFF);
-        self.update_zero_and_negative_flags(result);
-        // check for sign bit correctness
-        if (value ^ result) & (result ^ self.register_a) & 0x80 != 0 {
-            self.status.overflow = true;
-        } else {
-            self.status.overflow = false;
-        }
-        self.register_a = result;
+        self.add_to_register_a(((value as i8).wrapping_neg().wrapping_sub(1)) as u8);
     }
 
     /// `SEC` sets the carry flag to 1.
@@ -858,7 +895,7 @@ PC:\t0x{:X}",
     /// `STA` copies a value from the A register into memory.
     fn sta(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        self.print_command_with_args("STA", addr, 0);
+        self.print_command_with_addr("STA", addr);
 
         self.mem_write(addr, self.register_a);
     }
@@ -866,7 +903,7 @@ PC:\t0x{:X}",
     /// `STX` copies a value from the X register into memory.
     fn stx(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        self.print_command_with_args("STX", addr, 0);
+        self.print_command_with_addr("STX", addr);
 
         self.mem_write(addr, self.register_x);
     }
@@ -874,7 +911,7 @@ PC:\t0x{:X}",
     /// `STY` copies a value from the Y register into memory.
     fn sty(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        self.print_command_with_args("STY", addr, 0);
+        self.print_command_with_addr("STY", addr);
 
         self.mem_write(addr, self.register_y);
     }
@@ -911,13 +948,32 @@ PC:\t0x{:X}",
     /// `TXS` copies the contents fo the X register into the Stack
     fn txs(&mut self) {
         self.print_command("TXS");
-        self.write_to_stack(self.register_x);
+        self.stack_pointer = self.register_x;
     }
 
     /// `TYA` copies the contents of the Y register into the A register
     fn tya(&mut self) {
         self.print_command("TYA");
         self.register_a = self.register_y;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    fn add_to_register_a(&mut self, data: u8) {
+        let sum = self.register_a as u16
+            + data as u16
+            + (match self.status.carry {
+                true => 1,
+                false => 0,
+            }) as u16;
+
+        let carry = sum > 0xff;
+        self.set_carry_flag(carry);
+
+        let result = sum as u8;
+
+        self.set_overflow_flag((data ^ result) & (result ^ self.register_a) & 0x80 != 0);
+
+        self.register_a = result;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
@@ -968,27 +1024,29 @@ PC:\t0x{:X}",
     }
 
     fn read_from_stack(&mut self) -> u8 {
-        let value = self.mem_read(self.stack_pointer);
         self.stack_pointer = self.stack_pointer.wrapping_add(1);
+        let value = self.mem_read(STACK_ADDR as u16 + self.stack_pointer as u16);
 
         value
     }
 
     fn read_from_stack_u16(&mut self) -> u16 {
-        let value = self.mem_read_u16(self.stack_pointer);
-        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+        let low = self.read_from_stack() as u16;
+        let high = self.read_from_stack() as u16;
 
-        value
+        high << 8 | low
     }
 
     fn write_to_stack(&mut self, value: u8) {
+        self.mem_write((STACK_ADDR as u16) + self.stack_pointer as u16, value);
         self.stack_pointer = self.stack_pointer.wrapping_sub(1);
-        self.mem_write(self.stack_pointer, value);
     }
 
     fn write_to_stack_u16(&mut self, value: u16) {
-        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
-        self.mem_write_u16(self.stack_pointer, value);
+        let high = (value >> 8) as u8;
+        let low = (value & 0xff) as u8;
+        self.write_to_stack(high);
+        self.write_to_stack(low);
     }
 }
 
@@ -1430,7 +1488,7 @@ mod test {
         // BRK
         let program = vec![0xB8, 0x00];
         cpu.load(program);
-        cpu.program_counter = 0x8000;
+        cpu.program_counter = PRG_ROM_START;
         cpu.run();
 
         assert_eq!(
@@ -1612,7 +1670,7 @@ mod test {
 
         cpu.load(program);
         cpu.status.from_binary(0b1111_1111);
-        cpu.program_counter = 0x8000;
+        cpu.program_counter = PRG_ROM_START;
         cpu.run();
 
         let stack_val = cpu.read_from_stack();
@@ -1632,7 +1690,7 @@ mod test {
 
         cpu.load(program);
         cpu.write_to_stack(0b1111_1111);
-        cpu.program_counter = 0x8000;
+        cpu.program_counter = PRG_ROM_START;
         cpu.run();
 
         assert_eq!(
@@ -1650,13 +1708,13 @@ mod test {
 
         cpu.load(program);
         cpu.write_to_stack(0b1111_1111);
-        cpu.program_counter = 0x8000;
+        cpu.program_counter = PRG_ROM_START;
         cpu.run();
 
         assert_eq!(
             cpu.status.to_binary(),
-            0b1111_1111,
-            "the value of the a register should be loaded from the stack"
+            0b1110_1111,
+            "the value of the a register should be loaded from the stack, except the B flag for arch reasons"
         );
     }
 
@@ -1675,7 +1733,7 @@ mod test {
         );
         assert_eq!(
             cpu.status.carry, true,
-            "carry status should recieve the 1 from the 7th bit, pre shift"
+            "carry status should receive the 1 from the 7th bit, pre shift"
         )
     }
 
@@ -1695,7 +1753,7 @@ mod test {
         );
         assert_eq!(
             cpu.status.carry, false,
-            "carry status should recieve the 1 from the 7th bit, pre shift"
+            "carry status should receive the 1 from the 7th bit, pre shift"
         )
     }
 
@@ -1716,7 +1774,7 @@ mod test {
         );
         assert_eq!(
             cpu.status.carry, true,
-            "carry status should recieve the 1 from the 7th bit, pre shift"
+            "carry status should receive the 1 from the 7th bit, pre shift"
         )
     }
 
@@ -1737,7 +1795,7 @@ mod test {
         );
         assert_eq!(
             cpu.status.carry, true,
-            "carry status should recieve the 1 from the 0th bit, pre shift"
+            "carry status should receive the 1 from the 0th bit, pre shift"
         )
     }
 
@@ -1759,7 +1817,7 @@ mod test {
         );
         assert_eq!(
             cpu.status.carry, false,
-            "carry status should recieve the 0 from the 0th bit, pre shift"
+            "carry status should receive the 0 from the 0th bit, pre shift"
         )
     }
 
@@ -1780,7 +1838,7 @@ mod test {
         );
         assert_eq!(
             cpu.status.carry, true,
-            "carry status should recieve the 1 from the 0th bit, pre shift"
+            "carry status should receive the 1 from the 0th bit, pre shift"
         )
     }
 
