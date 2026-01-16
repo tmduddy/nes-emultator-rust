@@ -223,14 +223,8 @@ impl Memory for CPU {
     }
 }
 
-impl Default for CPU {
-    fn default() -> Self {
-        CPU::new()
-    }
-}
-
 impl CPU {
-    pub fn new() -> Self {
+    pub fn new(bus: Bus) -> Self {
         CPU {
             register_a: 0,
             register_x: 0,
@@ -238,7 +232,7 @@ impl CPU {
             stack_pointer: STACK_RESET,
             status: Status::new(),
             program_counter: 0,
-            bus: Bus::new(),
+            bus,
         }
     }
 
