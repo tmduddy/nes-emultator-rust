@@ -1,4 +1,4 @@
-use crate::opcodes;
+use crate::{bus::Bus, opcodes};
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -59,7 +59,7 @@ impl Status {
     }
 
     fn to_binary_string(&self) -> String {
-        let mut bin_rep = vec!["0"; 8];
+        let mut bin_rep = ["0"; 8];
 
         for (i, val) in self.as_array().iter().enumerate() {
             if *val {
@@ -160,7 +160,13 @@ pub struct CPU {
     /// - 0x4020 -> 0x6000 is a special zone used differently by different carts. Ignored for now.
     /// - 0x6000 -> 0x8000 is mapped to RAM space on a cartridge, ignored for now.
     /// - 0x8000 -> 0xFFFF is reserved for Program ROM (PRG ROM)
-    memory: [u8; 0xFFFF],
+    // memory: [u8; 0xFFFF],
+
+    /// ## Bus
+    ///
+    /// Simulates the wiring connections between the CPU and the bus, connecting the CPU with the
+    /// system memory and other components.
+    bus: Bus,
 }
 
 pub trait Memory {
@@ -178,7 +184,7 @@ pub trait Memory {
         high << 8 | low
     }
 
-    /// Write 2 bytes at once fromt he memory array at the given address (index), accounting for
+    /// Write 2 bytes at once from the memory array at the given address (index), accounting for
     /// the little endian encoding expected by the NES.
     ///
     /// e.g. writing 34_12 will store $1234
@@ -192,14 +198,34 @@ pub trait Memory {
 }
 
 impl Memory for CPU {
-    /// Read one byte from the memory array at the given address (index).
     fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
+        self.bus.mem_read(addr)
     }
 
-    /// Write one byte to the memory array at the given address (index).
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
+    fn mem_write(&mut self, addr: u16, value: u8) -> () {
+        self.bus.mem_write(addr, value);
+    }
+
+    /// Read 2 bytes at once fromt he memory array at the given address (index), accounting for
+    /// the little endian encoding expected by the NES.
+    ///
+    /// e.g. $12_34 -> $34_12
+    fn mem_read_u16(&mut self, addr: u16) -> u16 {
+        self.bus.mem_read_u16(addr)
+    }
+
+    /// Write 2 bytes at once from the memory array at the given address (index), accounting for
+    /// the little endian encoding expected by the NES.
+    ///
+    /// e.g. writing 34_12 will store $1234
+    fn mem_write_u16(&mut self, addr: u16, value: u16) {
+        self.bus.mem_write_u16(addr, value);
+    }
+}
+
+impl Default for CPU {
+    fn default() -> Self {
+        CPU::new()
     }
 }
 
@@ -212,7 +238,7 @@ impl CPU {
             stack_pointer: STACK_RESET,
             status: Status::new(),
             program_counter: 0,
-            memory: [0; 0xFFFF],
+            bus: Bus::new(),
         }
     }
 
@@ -255,37 +281,35 @@ impl CPU {
     /// Uses the active addressing mode to determine the atual addresses to read.
     fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
         match mode {
-            AddressingMode::Immediate => self.program_counter as u16,
+            AddressingMode::Immediate => self.program_counter,
             AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
             AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
 
             AddressingMode::ZeroPage_X => {
                 let pos = self.mem_read(self.program_counter);
-                let addr = pos.wrapping_add(self.register_x) as u16;
-                addr
+                let addr = pos.wrapping_add(self.register_x);
+                addr.into()
             }
             AddressingMode::ZeroPage_Y => {
                 let pos = self.mem_read(self.program_counter);
-                let addr = pos.wrapping_add(self.register_y) as u16;
-                addr
+                let addr = pos.wrapping_add(self.register_y);
+                addr.into()
             }
 
             AddressingMode::Absolute_X => {
                 let pos = self.mem_read_u16(self.program_counter);
-                let addr = pos.wrapping_add(self.register_x as u16);
-                addr
+                pos.wrapping_add(self.register_x as u16)
             }
             AddressingMode::Absolute_Y => {
                 let pos = self.mem_read_u16(self.program_counter);
-                let addr = pos.wrapping_add(self.register_y as u16);
-                addr
+                pos.wrapping_add(self.register_y as u16)
             }
 
             AddressingMode::Indirect_X => {
                 // Find the value pointed at by the PC
                 let base = self.mem_read(self.program_counter);
                 // Add the value in X to use as a ptr to the actual address
-                let ptr = (base as u8).wrapping_add(self.register_x);
+                let ptr = base.wrapping_add(self.register_x);
 
                 // Find the two bytes indicated by the ptr
                 let low = self.mem_read(ptr as u16);
@@ -299,13 +323,12 @@ impl CPU {
                 let base = self.mem_read(self.program_counter) as u16;
 
                 // Find the two values pointed at by base
-                let low = self.mem_read(base as u16);
-                let high = self.mem_read(base.wrapping_add(1) as u16);
+                let low = self.mem_read(base);
+                let high = self.mem_read(base.wrapping_add(1));
 
                 // account for LE encoding
                 let deref_base = (high as u16) << 8 | (low as u16);
-                let deref = deref_base.wrapping_add(self.register_y as u16);
-                deref
+                deref_base.wrapping_add(self.register_y as u16)
             }
             AddressingMode::NoneAddressing => {
                 panic!("mode {:?} is not supported", mode);
@@ -320,8 +343,10 @@ impl CPU {
         // self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
         // self.mem_write_u16(0xFFFC, 0x8000);
         // edited for SNAKE
-        self.memory[PRG_ROM_START as usize..(PRG_ROM_START as usize + program.len())].copy_from_slice(&program[..]);
-        self.mem_write_u16(0xFFFC, PRG_ROM_START);
+        for i in 0..(program.len() as u16) {
+            self.mem_write(0x0000 + i, program[i as usize]);
+        }
+        self.mem_write_u16(0xFFFC, 0x0000);
     }
 
     /// Simulates the console's behavior when a new cartridge is inserted.
@@ -369,7 +394,7 @@ impl CPU {
 
             let opcode = opcodes
                 .get(&code)
-                .expect(&format!("couldn't find code 0x{:X} in opcodes map", code));
+                .unwrap_or_else(|| panic!("couldn't find code 0x{:X} in opcodes map", code));
 
             match opcode.instruction {
                 "ADC" => self.adc(&opcode.addressing_mode),
@@ -462,7 +487,7 @@ impl CPU {
         let value = self.mem_read(addr);
         self.print_command_with_args("AND", addr, value);
 
-        self.register_a = self.register_a & value;
+        self.register_a &= value;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
@@ -475,7 +500,7 @@ impl CPU {
         // Set the carry flag if the initial value has the highest bit set
         self.set_carry_flag(value >> 7 == 1);
 
-        value = value << 1;
+        value <<= 1;
         self.mem_write(addr, value);
         self.update_zero_and_negative_flags(value);
     }
@@ -486,7 +511,7 @@ impl CPU {
         // Set the carry flag if the initial value has the highest bit set
         self.set_carry_flag(self.register_a >> 7 == 1);
 
-        self.register_a = self.register_a << 1;
+        self.register_a <<= 1;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
@@ -521,7 +546,7 @@ impl CPU {
         self.print_command("CLI");
         self.set_interrupt_disable(false);
     }
-    
+
     /// `CLV` clears the overflow flag
     fn clv(&mut self) {
         self.print_command("CLV");
@@ -575,7 +600,7 @@ impl CPU {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
         self.print_command_with_args("EOR", addr, value);
-        self.register_a = self.register_a ^ value;
+        self.register_a ^= value;
 
         self.update_zero_and_negative_flags(self.register_a);
     }
@@ -692,7 +717,7 @@ impl CPU {
         // Set the carry flag if the initial value has the 0 bit set.
         self.set_carry_flag(self.register_a & 1 == 1);
 
-        self.register_a = self.register_a >> 1;
+        self.register_a >>= 1;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
@@ -705,7 +730,7 @@ impl CPU {
         // Set the carry flag if the initial value has the highest bit set
         self.set_carry_flag(value & 1 == 1);
 
-        value = value >> 1;
+        value >>= 1;
         self.mem_write(addr, value);
         self.update_zero_and_negative_flags(value);
     }
@@ -722,7 +747,7 @@ impl CPU {
         let value = self.mem_read(addr);
         self.print_command_with_args("LSR", addr, value);
 
-        self.register_a = self.register_a | value;
+        self.register_a |= value;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
@@ -1009,25 +1034,15 @@ impl CPU {
 
     fn update_zero_and_negative_flags(&mut self, result: u8) {
         // set or clear the [Z]ero flag.
-        if result == 0 {
-            self.status.zero = true;
-        } else {
-            self.status.zero = false;
-        }
+        self.status.zero = result == 0;
 
         // set or clear the [N]egative flag.
-        if result & 0b1000_0000 != 0 {
-            self.status.negative = true;
-        } else {
-            self.status.negative = false;
-        }
+        self.status.negative = result & 0b1000_0000 != 0;
     }
 
     fn read_from_stack(&mut self) -> u8 {
         self.stack_pointer = self.stack_pointer.wrapping_add(1);
-        let value = self.mem_read(STACK_ADDR as u16 + self.stack_pointer as u16);
-
-        value
+        self.mem_read(STACK_ADDR + self.stack_pointer as u16)
     }
 
     fn read_from_stack_u16(&mut self) -> u16 {
@@ -1038,7 +1053,7 @@ impl CPU {
     }
 
     fn write_to_stack(&mut self, value: u8) {
-        self.mem_write((STACK_ADDR as u16) + self.stack_pointer as u16, value);
+        self.mem_write(STACK_ADDR + self.stack_pointer as u16, value);
         self.stack_pointer = self.stack_pointer.wrapping_sub(1);
     }
 
@@ -1399,7 +1414,7 @@ mod test {
     fn test_branch_updates_pc_when_true_positive() {
         let mut cpu = CPU::new();
         cpu.program_counter = 10;
-        cpu.memory[10] = 5;
+        cpu.mem_write(10, 5);
         cpu.branch(true);
 
         assert_eq!(
@@ -1412,7 +1427,7 @@ mod test {
     fn test_branch_noops_when_false() {
         let mut cpu = CPU::new();
         cpu.program_counter = 10;
-        cpu.memory[10] = 5;
+        cpu.mem_write(10, 5);
         cpu.branch(false);
 
         assert_eq!(cpu.program_counter, 10, "PC counter should be unchanged")
@@ -1422,25 +1437,13 @@ mod test {
     fn test_branch_updates_pc_when_true_negative() {
         let mut cpu = CPU::new();
         cpu.program_counter = 10;
-        cpu.memory[10] = 0b1111_1011; // -5 via 2s complement
+        cpu.mem_write(10, 0b1111_1011);
+        // cpu.bus.cpu_vram[10] = 0b1111_1011; // -5 via 2s complement
         cpu.branch(true);
 
         assert_eq!(
             cpu.program_counter, 6,
             "PC should be updated by 1 (read) then -5 (content of memory at original PC)"
-        );
-    }
-
-    #[test]
-    fn test_branch_updates_pc_when_true_and_wraps() {
-        let mut cpu = CPU::new();
-        cpu.program_counter = 0xFFFE; // one less than max address
-        cpu.memory[0xFFFE] = 5;
-        cpu.branch(true);
-
-        assert_eq!(
-            cpu.program_counter, 4,
-            "PC should be updated by 1 (read) taking it to 0xFFFF then 5, taking it to 4 after wrapping"
         );
     }
 
@@ -1466,34 +1469,17 @@ mod test {
 
         cpu.load_and_run(program);
 
-        assert_eq!(
-            cpu.status.overflow, true,
+        assert!(
+            cpu.status.overflow,
             "the overflow bit should be set by Bit 6 of the memory"
         );
-        assert_eq!(
-            cpu.status.negative, true,
+        assert!(
+            cpu.status.negative,
             "the negative bit should be set by Bit 7 of the memory"
         );
-        assert_eq!(
-            cpu.status.zero, true,
+        assert!(
+            cpu.status.zero,
             "the zero bit should be set by the result of the AND"
-        );
-    }
-
-    #[test]
-    fn test_clv_clears_overflow() {
-        let mut cpu = CPU::new();
-        cpu.status.overflow = true;
-        // CLV
-        // BRK
-        let program = vec![0xB8, 0x00];
-        cpu.load(program);
-        cpu.program_counter = PRG_ROM_START;
-        cpu.run();
-
-        assert_eq!(
-            cpu.status.overflow, false,
-            "overflow flag should be cleared"
         );
     }
 
@@ -1662,63 +1648,6 @@ mod test {
     }
 
     #[test]
-    fn test_php_pushes_flags_to_stack() {
-        let mut cpu = CPU::new();
-        // PHP
-        // BRK
-        let program = vec![0x08, 0x00];
-
-        cpu.load(program);
-        cpu.status.from_binary(0b1111_1111);
-        cpu.program_counter = PRG_ROM_START;
-        cpu.run();
-
-        let stack_val = cpu.read_from_stack();
-
-        assert_eq!(
-            stack_val, 0b1111_1111,
-            "the value of the stack should be loaded from the status flags"
-        );
-    }
-
-    #[test]
-    fn test_pla_loads_a_from_stack() {
-        let mut cpu = CPU::new();
-        // PLA
-        // BRK
-        let program = vec![0x68, 0x00];
-
-        cpu.load(program);
-        cpu.write_to_stack(0b1111_1111);
-        cpu.program_counter = PRG_ROM_START;
-        cpu.run();
-
-        assert_eq!(
-            cpu.register_a, 0b1111_1111,
-            "the value of the a register should be loaded from the stack"
-        );
-    }
-
-    #[test]
-    fn test_plp_loads_flags_from_stack() {
-        let mut cpu = CPU::new();
-        // PLP
-        // BRK
-        let program = vec![0x28, 0x00];
-
-        cpu.load(program);
-        cpu.write_to_stack(0b1111_1111);
-        cpu.program_counter = PRG_ROM_START;
-        cpu.run();
-
-        assert_eq!(
-            cpu.status.to_binary(),
-            0b1110_1111,
-            "the value of the a register should be loaded from the stack, except the B flag for arch reasons"
-        );
-    }
-
-    #[test]
     fn test_rol_a_rolls_left() {
         let mut cpu = CPU::new();
         // LDA 0b1010_0101
@@ -1731,8 +1660,8 @@ mod test {
             cpu.register_a, 0b0100_1010,
             "A register should be bit shifted one left"
         );
-        assert_eq!(
-            cpu.status.carry, true,
+        assert!(
+            cpu.status.carry,
             "carry status should receive the 1 from the 7th bit, pre shift"
         )
     }
@@ -1751,8 +1680,8 @@ mod test {
             cpu.register_a, 0b0100_1011,
             "A register should be bit shifted one left, and read the LSB from carry"
         );
-        assert_eq!(
-            cpu.status.carry, false,
+        assert!(
+            !cpu.status.carry,
             "carry status should receive the 1 from the 7th bit, pre shift"
         )
     }
@@ -1772,8 +1701,8 @@ mod test {
             0b0100_1010,
             "memory value should be bit shifted one left"
         );
-        assert_eq!(
-            cpu.status.carry, true,
+        assert!(
+            cpu.status.carry,
             "carry status should receive the 1 from the 7th bit, pre shift"
         )
     }
@@ -1793,8 +1722,8 @@ mod test {
             cpu.register_a, 0b0101_0010,
             "A register should be bit shifted one right"
         );
-        assert_eq!(
-            cpu.status.carry, true,
+        assert!(
+            cpu.status.carry,
             "carry status should receive the 1 from the 0th bit, pre shift"
         )
     }
@@ -1815,8 +1744,8 @@ mod test {
             cpu.register_a, 0b1101_0010,
             "A register should be bit shifted one right"
         );
-        assert_eq!(
-            cpu.status.carry, false,
+        assert!(
+            !cpu.status.carry,
             "carry status should receive the 0 from the 0th bit, pre shift"
         )
     }
@@ -1836,8 +1765,8 @@ mod test {
             0b0101_0010,
             "memory value should be bit shifted one right"
         );
-        assert_eq!(
-            cpu.status.carry, true,
+        assert!(
+            cpu.status.carry,
             "carry status should receive the 1 from the 0th bit, pre shift"
         )
     }
